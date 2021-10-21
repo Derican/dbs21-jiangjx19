@@ -43,6 +43,7 @@ include_directories(
 #file(GLOB antlr4-src_SRC "${PROJECT_SOURCE_DIR}/src/generated/*")
 set(antlr4-src_SRC 
   ${PROJECT_SOURCE_DIR}/src/main.cpp
+  ${PROJECT_SOURCE_DIR}/src/MinisqlVisitor.hpp
   ${antlr4-src-GENERATED_SRC}
   )
 
