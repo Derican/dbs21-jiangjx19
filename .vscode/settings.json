@@ -1,0 +1,9 @@
+{
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "cmake.configureEnvironment": {
+        "ANTLR_JAR_LOCATION": "./antlr-4.9.2-complete.jar"
+    },
+    "files.associations": {
+        "iostream": "cpp"
+    }
+}
