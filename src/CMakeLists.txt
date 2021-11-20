@@ -38,6 +38,13 @@ include_directories(
   ${PROJECT_SOURCE_DIR}/runtime/src/tree
   ${PROJECT_SOURCE_DIR}/runtime/src/support
   ${PROJECT_SOURCE_DIR}/src/generated
+  ${PROJECT_SOURCE_DIR}/src/bufmanager
+  ${PROJECT_SOURCE_DIR}/src/fileio
+  ${PROJECT_SOURCE_DIR}/src/utils
+  ${PROJECT_SOURCE_DIR}/src/recmanager
+  ${PROJECT_SOURCE_DIR}/src/ixmanager
+  ${PROJECT_SOURCE_DIR}/src/sysmanager
+  ${PROJECT_SOURCE_DIR}/src/qlmanager
   )
 
 #file(GLOB antlr4-src_SRC "${PROJECT_SOURCE_DIR}/src/generated/*")
