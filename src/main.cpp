@@ -56,6 +56,10 @@ int main(int, const char **)
 
     while (true)
     {
+        if (sm->dbOpened)
+            std::cout << "minisql(" << sm->openedDbName << ")>";
+        else
+            std::cout << "minisql>";
         sSQL = getSql();
         if (sSQL == "EXIT;" || sSQL == "QUIT;")
             break;

@@ -64,5 +64,41 @@ public:
     {
         if (op == CompOp::NO)
             return true;
+        switch (type)
+        {
+        case AttrType::INT:
+        {
+            int *lhs = reinterpret_cast<int *>(src + offset);
+            int *rhs = reinterpret_cast<int *>(val);
+            switch (op)
+            {
+            case CompOp::E:
+                return *lhs == *rhs;
+                break;
+
+            default:
+                return false;
+                break;
+            }
+        }
+        case AttrType::VARCHAR:
+        {
+            char *lhs = src + offset;
+            char *rhs = reinterpret_cast<char *>(val);
+            switch (op)
+            {
+            case CompOp::E:
+                return strcmp(lhs, rhs) == 0;
+                break;
+
+            default:
+                return false;
+                break;
+            }
+        }
+        default:
+            return false;
+            break;
+        }
     }
 };

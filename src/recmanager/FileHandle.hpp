@@ -63,8 +63,8 @@ public:
         rid.getSlotID(slotID);
         BufType b = bpm->getPage(fileID, pageID, index);
         DataType d = reinterpret_cast<DataType>(b);
-        memcpy(&d[fh.slotMapSize + fh.slotSize * slotID], pData, sizeof(fh.slotSize));
-        SlotMap slotMap(d, fh.slotMapSize);
+        memcpy(&d[fh.slotMapSize + fh.slotSize * slotID], pData, fh.slotSize);
+        SlotMap slotMap(d, fh.capacity);
         slotMap.set(slotID);
         bpm->markDirty(index);
         bpm->writeBack(index);
@@ -72,14 +72,27 @@ public:
     }
     bool deleteRec(const RID &rid)
     {
+
         int index, pageID, slotID;
         rid.getPageID(pageID);
         rid.getSlotID(slotID);
+
+        if (fh.firstFree > pageID)
+        {
+            fh.firstFree = pageID;
+            BufType b = bpm->getPage(fileID, 0, index);
+            DataType d = reinterpret_cast<DataType>(b);
+            memcpy(d, &fh, sizeof(fh));
+            bpm->markDirty(index);
+            bpm->writeBack(index);
+        }
+
         BufType b = bpm->getPage(fileID, pageID, index);
         DataType d = reinterpret_cast<DataType>(b);
-        SlotMap slotMap(d, fh.slotMapSize);
+        SlotMap slotMap(d, fh.capacity);
         slotMap.remove(slotID);
         bpm->markDirty(index);
+        bpm->writeBack(index);
         return true;
     }
     bool updateRec(const Record &rec)
@@ -93,21 +106,21 @@ public:
         rid.getSlotID(slotID);
         BufType b = bpm->getPage(fileID, pageID, index);
         DataType d = reinterpret_cast<DataType>(b);
-        memcpy(&d[fh.slotMapSize + fh.slotSize * slotID], pData, sizeof(fh.slotSize));
-        SlotMap slotMap(d, fh.slotMapSize);
+        memcpy(&d[fh.slotMapSize + fh.slotSize * slotID], pData, fh.slotSize);
+        SlotMap slotMap(d, fh.capacity);
         bpm->markDirty(index);
         return true;
     }
     bool forcePage(const int pageId) {}
     bool getNextFreeSlot(RID &rid)
     {
-        int pageID = fh.numPages;
+        int pageID = fh.firstFree;
         if (fh.firstFree >= fh.numPages)
             getNewPage(pageID);
         int index;
         BufType b = bpm->getPage(fileID, pageID, index);
         DataType d = reinterpret_cast<DataType>(b);
-        SlotMap slotMap(d, fh.slotMapSize);
+        SlotMap slotMap(d, fh.capacity);
         for (int i = 0; i < fh.capacity; i++)
         {
             if (!slotMap.test(i))

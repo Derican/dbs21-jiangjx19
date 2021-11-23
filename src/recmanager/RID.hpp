@@ -33,4 +33,8 @@ public:
         slotID = _slotID;
         return true;
     }
+    bool valid()
+    {
+        return pageID >= 0 && slotID >= 0;
+    }
 };

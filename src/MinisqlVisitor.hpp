@@ -39,6 +39,14 @@ public:
         return res;
     }
 
+    antlrcpp::Any visitDrop_db(SQLParser::Drop_dbContext *ctx) override
+    {
+        std::string dbName = ctx->Identifier()->getText();
+        sm->destroyDb(dbName);
+        antlrcpp::Any res;
+        return res;
+    }
+
     antlrcpp::Any visitShow_dbs(SQLParser::Show_dbsContext *ctx) override
     {
         sm->showAllDb();
@@ -48,6 +56,9 @@ public:
 
     antlrcpp::Any visitUse_db(SQLParser::Use_dbContext *ctx) override
     {
-        return visitChildren(ctx);
+        std::string dbName = ctx->Identifier()->getText();
+        sm->openDb(dbName);
+        antlrcpp::Any res;
+        return res;
     }
 };

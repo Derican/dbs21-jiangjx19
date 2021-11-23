@@ -19,9 +19,10 @@ private:
     RecordManager *rm;
     IndexManager *im;
     FileHandle dbCatHandle, relCatHandle, attrCatHandle;
-    bool dbOpened = false;
 
 public:
+    bool dbOpened = false;
+    std::string openedDbName;
     SystemManager() {}
     SystemManager(RecordManager *_rm, IndexManager *_im)
     {
@@ -66,17 +67,67 @@ public:
     }
     bool destroyDb(const std::string dbName)
     {
-        std::string prefix = "rm -r ";
-        system((prefix + dbName).c_str());
-        return true;
+        char value[DBNAME_MAX_BYTES] = "\0";
+        strcpy(value, dbName.c_str());
+        rm->OpenFile("dbcat", dbCatHandle);
+        FileScan fs;
+        fs.openScan(dbCatHandle, AttrType::VARCHAR, DBNAME_MAX_BYTES, 0, CompOp::E, value);
+        Record rec;
+        RID rid(-1, -1);
+        while (fs.getNextRec(rec))
+        {
+            rec.getRID(rid);
+            break;
+        }
+        fs.closeScan();
+        if (rid.valid())
+            dbCatHandle.deleteRec(rid);
+        rm->CloseFile("dbcat");
+
+        if (rid.valid())
+        {
+            std::string prefix = "rm -r ";
+            system((prefix + dbName).c_str());
+            return true;
+        }
+        else
+        {
+            std::cout << "Database " << dbName << " not exists." << std::endl;
+            return false;
+        }
     }
     bool openDb(const std::string dbName)
     {
-        if (dbOpened)
+        // check validation
+        char value[DBNAME_MAX_BYTES] = "\0";
+        strcpy(value, dbName.c_str());
+        rm->OpenFile("dbcat", dbCatHandle);
+        FileScan fs;
+        fs.openScan(dbCatHandle, AttrType::VARCHAR, DBNAME_MAX_BYTES, 0, CompOp::E, value);
+        Record rec;
+        RID rid(-1, -1);
+        while (fs.getNextRec(rec))
+        {
+            rec.getRID(rid);
+            break;
+        }
+        fs.closeScan();
+        rm->CloseFile("dbcat");
+
+        if (!rid.valid())
+        {
+            std::cout << "Database " << dbName << " not exists." << std::endl;
             return false;
+        }
+
+        if (dbOpened)
+        {
+            system("cd ..");
+        }
         std::string prefix = "cd ";
         system((prefix + dbName).c_str());
         dbOpened = true;
+        openedDbName = dbName;
         return true;
     }
     bool closeDb()
@@ -303,13 +354,16 @@ public:
         FileScan fs;
         fs.openScan(dbCatHandle, AttrType::VARCHAR, DBNAME_MAX_BYTES, 0, CompOp::NO, nullptr);
         Record rec;
+        int count = 0;
         while (fs.getNextRec(rec))
         {
             DataType tmp;
             rec.getData(tmp);
             std::cout << "| " << tmp << std::endl;
+            count++;
         }
         std::cout << "|----------------" << std::endl;
+        std::cout << count << " database(s) stored." << std::endl;
         fs.closeScan();
         rm->CloseFile("dbcat");
         return true;
