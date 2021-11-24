@@ -37,6 +37,9 @@ public:
         this->offset = offset;
         this->op = op;
         this->val = val;
+        pageID = 1;
+        slotID = 0;
+        curPage = nullptr;
     }
     bool getNextRec(Record &rec)
     {

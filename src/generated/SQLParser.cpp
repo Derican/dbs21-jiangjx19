@@ -1,7 +1,8 @@
 
-// Generated from SQL.g4 by ANTLR 4.9.2
+// Generated from /home/derican/dbs21-jiangjx19/src/SQL.g4 by ANTLR 4.9.2
 
 
+#include "SQLListener.h"
 #include "SQLVisitor.h"
 
 #include "SQLParser.h"
@@ -52,6 +53,18 @@ SQLParser::StatementContext* SQLParser::ProgramContext::statement(size_t i) {
 
 size_t SQLParser::ProgramContext::getRuleIndex() const {
   return SQLParser::RuleProgram;
+}
+
+void SQLParser::ProgramContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterProgram(this);
+}
+
+void SQLParser::ProgramContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitProgram(this);
 }
 
 
@@ -145,6 +158,18 @@ tree::TerminalNode* SQLParser::StatementContext::Null() {
 
 size_t SQLParser::StatementContext::getRuleIndex() const {
   return SQLParser::RuleStatement;
+}
+
+void SQLParser::StatementContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterStatement(this);
+}
+
+void SQLParser::StatementContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitStatement(this);
 }
 
 
@@ -257,6 +282,16 @@ void SQLParser::Db_statementContext::copyFrom(Db_statementContext *ctx) {
 
 SQLParser::Show_dbsContext::Show_dbsContext(Db_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Show_dbsContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterShow_dbs(this);
+}
+void SQLParser::Show_dbsContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitShow_dbs(this);
+}
 
 antlrcpp::Any SQLParser::Show_dbsContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -272,6 +307,16 @@ tree::TerminalNode* SQLParser::Drop_dbContext::Identifier() {
 
 SQLParser::Drop_dbContext::Drop_dbContext(Db_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Drop_dbContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterDrop_db(this);
+}
+void SQLParser::Drop_dbContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitDrop_db(this);
+}
 
 antlrcpp::Any SQLParser::Drop_dbContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -283,6 +328,16 @@ antlrcpp::Any SQLParser::Drop_dbContext::accept(tree::ParseTreeVisitor *visitor)
 
 SQLParser::Show_tablesContext::Show_tablesContext(Db_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Show_tablesContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterShow_tables(this);
+}
+void SQLParser::Show_tablesContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitShow_tables(this);
+}
 
 antlrcpp::Any SQLParser::Show_tablesContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -298,6 +353,16 @@ tree::TerminalNode* SQLParser::Create_dbContext::Identifier() {
 
 SQLParser::Create_dbContext::Create_dbContext(Db_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Create_dbContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterCreate_db(this);
+}
+void SQLParser::Create_dbContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitCreate_db(this);
+}
 
 antlrcpp::Any SQLParser::Create_dbContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -313,6 +378,16 @@ tree::TerminalNode* SQLParser::Use_dbContext::Identifier() {
 
 SQLParser::Use_dbContext::Use_dbContext(Db_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Use_dbContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterUse_db(this);
+}
+void SQLParser::Use_dbContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitUse_db(this);
+}
 
 antlrcpp::Any SQLParser::Use_dbContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -324,6 +399,16 @@ antlrcpp::Any SQLParser::Use_dbContext::accept(tree::ParseTreeVisitor *visitor) 
 
 SQLParser::Show_indexesContext::Show_indexesContext(Db_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Show_indexesContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterShow_indexes(this);
+}
+void SQLParser::Show_indexesContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitShow_indexes(this);
+}
 
 antlrcpp::Any SQLParser::Show_indexesContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -451,6 +536,16 @@ tree::TerminalNode* SQLParser::Dump_dataContext::Identifier() {
 
 SQLParser::Dump_dataContext::Dump_dataContext(Io_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Dump_dataContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterDump_data(this);
+}
+void SQLParser::Dump_dataContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitDump_data(this);
+}
 
 antlrcpp::Any SQLParser::Dump_dataContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -470,6 +565,16 @@ tree::TerminalNode* SQLParser::Load_dataContext::Identifier() {
 
 SQLParser::Load_dataContext::Load_dataContext(Io_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Load_dataContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterLoad_data(this);
+}
+void SQLParser::Load_dataContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitLoad_data(this);
+}
 
 antlrcpp::Any SQLParser::Load_dataContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -573,6 +678,16 @@ SQLParser::Where_and_clauseContext* SQLParser::Delete_from_tableContext::where_a
 
 SQLParser::Delete_from_tableContext::Delete_from_tableContext(Table_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Delete_from_tableContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterDelete_from_table(this);
+}
+void SQLParser::Delete_from_tableContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitDelete_from_table(this);
+}
 
 antlrcpp::Any SQLParser::Delete_from_tableContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -592,6 +707,16 @@ SQLParser::Value_listsContext* SQLParser::Insert_into_tableContext::value_lists(
 
 SQLParser::Insert_into_tableContext::Insert_into_tableContext(Table_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Insert_into_tableContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterInsert_into_table(this);
+}
+void SQLParser::Insert_into_tableContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitInsert_into_table(this);
+}
 
 antlrcpp::Any SQLParser::Insert_into_tableContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -611,6 +736,16 @@ SQLParser::Field_listContext* SQLParser::Create_tableContext::field_list() {
 
 SQLParser::Create_tableContext::Create_tableContext(Table_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Create_tableContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterCreate_table(this);
+}
+void SQLParser::Create_tableContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitCreate_table(this);
+}
 
 antlrcpp::Any SQLParser::Create_tableContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -626,6 +761,16 @@ tree::TerminalNode* SQLParser::Describe_tableContext::Identifier() {
 
 SQLParser::Describe_tableContext::Describe_tableContext(Table_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Describe_tableContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterDescribe_table(this);
+}
+void SQLParser::Describe_tableContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitDescribe_table(this);
+}
 
 antlrcpp::Any SQLParser::Describe_tableContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -641,6 +786,16 @@ SQLParser::Select_tableContext* SQLParser::Select_table_Context::select_table() 
 
 SQLParser::Select_table_Context::Select_table_Context(Table_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Select_table_Context::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterSelect_table_(this);
+}
+void SQLParser::Select_table_Context::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitSelect_table_(this);
+}
 
 antlrcpp::Any SQLParser::Select_table_Context::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -656,6 +811,16 @@ tree::TerminalNode* SQLParser::Drop_tableContext::Identifier() {
 
 SQLParser::Drop_tableContext::Drop_tableContext(Table_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Drop_tableContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterDrop_table(this);
+}
+void SQLParser::Drop_tableContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitDrop_table(this);
+}
 
 antlrcpp::Any SQLParser::Drop_tableContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -679,6 +844,16 @@ SQLParser::Where_and_clauseContext* SQLParser::Update_tableContext::where_and_cl
 
 SQLParser::Update_tableContext::Update_tableContext(Table_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Update_tableContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterUpdate_table(this);
+}
+void SQLParser::Update_tableContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitUpdate_table(this);
+}
 
 antlrcpp::Any SQLParser::Update_tableContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -848,6 +1023,18 @@ size_t SQLParser::Select_tableContext::getRuleIndex() const {
   return SQLParser::RuleSelect_table;
 }
 
+void SQLParser::Select_tableContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterSelect_table(this);
+}
+
+void SQLParser::Select_tableContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitSelect_table(this);
+}
+
 
 antlrcpp::Any SQLParser::Select_tableContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -958,6 +1145,16 @@ tree::TerminalNode* SQLParser::Alter_table_drop_pkContext::Identifier(size_t i) 
 
 SQLParser::Alter_table_drop_pkContext::Alter_table_drop_pkContext(Alter_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Alter_table_drop_pkContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterAlter_table_drop_pk(this);
+}
+void SQLParser::Alter_table_drop_pkContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitAlter_table_drop_pk(this);
+}
 
 antlrcpp::Any SQLParser::Alter_table_drop_pkContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -985,6 +1182,16 @@ SQLParser::IdentifiersContext* SQLParser::Alter_table_add_foreign_keyContext::id
 
 SQLParser::Alter_table_add_foreign_keyContext::Alter_table_add_foreign_keyContext(Alter_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Alter_table_add_foreign_keyContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterAlter_table_add_foreign_key(this);
+}
+void SQLParser::Alter_table_add_foreign_keyContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitAlter_table_add_foreign_key(this);
+}
 
 antlrcpp::Any SQLParser::Alter_table_add_foreign_keyContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1004,6 +1211,16 @@ SQLParser::IdentifiersContext* SQLParser::Alter_table_add_uniqueContext::identif
 
 SQLParser::Alter_table_add_uniqueContext::Alter_table_add_uniqueContext(Alter_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Alter_table_add_uniqueContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterAlter_table_add_unique(this);
+}
+void SQLParser::Alter_table_add_uniqueContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitAlter_table_add_unique(this);
+}
 
 antlrcpp::Any SQLParser::Alter_table_add_uniqueContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1023,6 +1240,16 @@ SQLParser::IdentifiersContext* SQLParser::Alter_drop_indexContext::identifiers()
 
 SQLParser::Alter_drop_indexContext::Alter_drop_indexContext(Alter_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Alter_drop_indexContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterAlter_drop_index(this);
+}
+void SQLParser::Alter_drop_indexContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitAlter_drop_index(this);
+}
 
 antlrcpp::Any SQLParser::Alter_drop_indexContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1042,6 +1269,16 @@ SQLParser::IdentifiersContext* SQLParser::Alter_add_indexContext::identifiers() 
 
 SQLParser::Alter_add_indexContext::Alter_add_indexContext(Alter_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Alter_add_indexContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterAlter_add_index(this);
+}
+void SQLParser::Alter_add_indexContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitAlter_add_index(this);
+}
 
 antlrcpp::Any SQLParser::Alter_add_indexContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1061,6 +1298,16 @@ tree::TerminalNode* SQLParser::Alter_table_drop_foreign_keyContext::Identifier(s
 
 SQLParser::Alter_table_drop_foreign_keyContext::Alter_table_drop_foreign_keyContext(Alter_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Alter_table_drop_foreign_keyContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterAlter_table_drop_foreign_key(this);
+}
+void SQLParser::Alter_table_drop_foreign_keyContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitAlter_table_drop_foreign_key(this);
+}
 
 antlrcpp::Any SQLParser::Alter_table_drop_foreign_keyContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1084,6 +1331,16 @@ SQLParser::IdentifiersContext* SQLParser::Alter_table_add_pkContext::identifiers
 
 SQLParser::Alter_table_add_pkContext::Alter_table_add_pkContext(Alter_statementContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Alter_table_add_pkContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterAlter_table_add_pk(this);
+}
+void SQLParser::Alter_table_add_pkContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitAlter_table_add_pk(this);
+}
 
 antlrcpp::Any SQLParser::Alter_table_add_pkContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1318,6 +1575,18 @@ size_t SQLParser::Field_listContext::getRuleIndex() const {
   return SQLParser::RuleField_list;
 }
 
+void SQLParser::Field_listContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterField_list(this);
+}
+
+void SQLParser::Field_listContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitField_list(this);
+}
+
 
 antlrcpp::Any SQLParser::Field_listContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1392,6 +1661,16 @@ tree::TerminalNode* SQLParser::Primary_key_fieldContext::Identifier() {
 
 SQLParser::Primary_key_fieldContext::Primary_key_fieldContext(FieldContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Primary_key_fieldContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterPrimary_key_field(this);
+}
+void SQLParser::Primary_key_fieldContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitPrimary_key_field(this);
+}
 
 antlrcpp::Any SQLParser::Primary_key_fieldContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1419,6 +1698,16 @@ tree::TerminalNode* SQLParser::Foreign_key_fieldContext::Identifier(size_t i) {
 
 SQLParser::Foreign_key_fieldContext::Foreign_key_fieldContext(FieldContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Foreign_key_fieldContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterForeign_key_field(this);
+}
+void SQLParser::Foreign_key_fieldContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitForeign_key_field(this);
+}
 
 antlrcpp::Any SQLParser::Foreign_key_fieldContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1446,6 +1735,16 @@ SQLParser::ValueContext* SQLParser::Normal_fieldContext::value() {
 
 SQLParser::Normal_fieldContext::Normal_fieldContext(FieldContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Normal_fieldContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterNormal_field(this);
+}
+void SQLParser::Normal_fieldContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitNormal_field(this);
+}
 
 antlrcpp::Any SQLParser::Normal_fieldContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1586,6 +1885,18 @@ size_t SQLParser::Type_Context::getRuleIndex() const {
   return SQLParser::RuleType_;
 }
 
+void SQLParser::Type_Context::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterType_(this);
+}
+
+void SQLParser::Type_Context::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitType_(this);
+}
+
 
 antlrcpp::Any SQLParser::Type_Context::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1669,6 +1980,18 @@ size_t SQLParser::Value_listsContext::getRuleIndex() const {
   return SQLParser::RuleValue_lists;
 }
 
+void SQLParser::Value_listsContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterValue_lists(this);
+}
+
+void SQLParser::Value_listsContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitValue_lists(this);
+}
+
 
 antlrcpp::Any SQLParser::Value_listsContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1733,6 +2056,18 @@ SQLParser::ValueContext* SQLParser::Value_listContext::value(size_t i) {
 
 size_t SQLParser::Value_listContext::getRuleIndex() const {
   return SQLParser::RuleValue_list;
+}
+
+void SQLParser::Value_listContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterValue_list(this);
+}
+
+void SQLParser::Value_listContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitValue_list(this);
 }
 
 
@@ -1813,6 +2148,18 @@ size_t SQLParser::ValueContext::getRuleIndex() const {
   return SQLParser::RuleValue;
 }
 
+void SQLParser::ValueContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterValue(this);
+}
+
+void SQLParser::ValueContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitValue(this);
+}
+
 
 antlrcpp::Any SQLParser::ValueContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1876,6 +2223,18 @@ SQLParser::Where_clauseContext* SQLParser::Where_and_clauseContext::where_clause
 
 size_t SQLParser::Where_and_clauseContext::getRuleIndex() const {
   return SQLParser::RuleWhere_and_clause;
+}
+
+void SQLParser::Where_and_clauseContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterWhere_and_clause(this);
+}
+
+void SQLParser::Where_and_clauseContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitWhere_and_clause(this);
 }
 
 
@@ -1952,6 +2311,16 @@ SQLParser::Value_listContext* SQLParser::Where_in_listContext::value_list() {
 
 SQLParser::Where_in_listContext::Where_in_listContext(Where_clauseContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Where_in_listContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterWhere_in_list(this);
+}
+void SQLParser::Where_in_listContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitWhere_in_list(this);
+}
 
 antlrcpp::Any SQLParser::Where_in_listContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1975,6 +2344,16 @@ SQLParser::Select_tableContext* SQLParser::Where_operator_selectContext::select_
 
 SQLParser::Where_operator_selectContext::Where_operator_selectContext(Where_clauseContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Where_operator_selectContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterWhere_operator_select(this);
+}
+void SQLParser::Where_operator_selectContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitWhere_operator_select(this);
+}
 
 antlrcpp::Any SQLParser::Where_operator_selectContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -1994,6 +2373,16 @@ tree::TerminalNode* SQLParser::Where_nullContext::Null() {
 
 SQLParser::Where_nullContext::Where_nullContext(Where_clauseContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Where_nullContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterWhere_null(this);
+}
+void SQLParser::Where_nullContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitWhere_null(this);
+}
 
 antlrcpp::Any SQLParser::Where_nullContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -2017,6 +2406,16 @@ SQLParser::ExpressionContext* SQLParser::Where_operator_expressionContext::expre
 
 SQLParser::Where_operator_expressionContext::Where_operator_expressionContext(Where_clauseContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Where_operator_expressionContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterWhere_operator_expression(this);
+}
+void SQLParser::Where_operator_expressionContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitWhere_operator_expression(this);
+}
 
 antlrcpp::Any SQLParser::Where_operator_expressionContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -2036,6 +2435,16 @@ SQLParser::Select_tableContext* SQLParser::Where_in_selectContext::select_table(
 
 SQLParser::Where_in_selectContext::Where_in_selectContext(Where_clauseContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Where_in_selectContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterWhere_in_select(this);
+}
+void SQLParser::Where_in_selectContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitWhere_in_select(this);
+}
 
 antlrcpp::Any SQLParser::Where_in_selectContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -2055,6 +2464,16 @@ tree::TerminalNode* SQLParser::Where_like_stringContext::String() {
 
 SQLParser::Where_like_stringContext::Where_like_stringContext(Where_clauseContext *ctx) { copyFrom(ctx); }
 
+void SQLParser::Where_like_stringContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterWhere_like_string(this);
+}
+void SQLParser::Where_like_stringContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitWhere_like_string(this);
+}
 
 antlrcpp::Any SQLParser::Where_like_stringContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -2199,6 +2618,18 @@ size_t SQLParser::ColumnContext::getRuleIndex() const {
   return SQLParser::RuleColumn;
 }
 
+void SQLParser::ColumnContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterColumn(this);
+}
+
+void SQLParser::ColumnContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitColumn(this);
+}
+
 
 antlrcpp::Any SQLParser::ColumnContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -2254,6 +2685,18 @@ SQLParser::ColumnContext* SQLParser::ExpressionContext::column() {
 
 size_t SQLParser::ExpressionContext::getRuleIndex() const {
   return SQLParser::RuleExpression;
+}
+
+void SQLParser::ExpressionContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterExpression(this);
+}
+
+void SQLParser::ExpressionContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitExpression(this);
 }
 
 
@@ -2345,6 +2788,18 @@ size_t SQLParser::Set_clauseContext::getRuleIndex() const {
   return SQLParser::RuleSet_clause;
 }
 
+void SQLParser::Set_clauseContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterSet_clause(this);
+}
+
+void SQLParser::Set_clauseContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitSet_clause(this);
+}
+
 
 antlrcpp::Any SQLParser::Set_clauseContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -2417,6 +2872,18 @@ SQLParser::SelectorContext* SQLParser::SelectorsContext::selector(size_t i) {
 
 size_t SQLParser::SelectorsContext::getRuleIndex() const {
   return SQLParser::RuleSelectors;
+}
+
+void SQLParser::SelectorsContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterSelectors(this);
+}
+
+void SQLParser::SelectorsContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitSelectors(this);
 }
 
 
@@ -2511,6 +2978,18 @@ size_t SQLParser::SelectorContext::getRuleIndex() const {
   return SQLParser::RuleSelector;
 }
 
+void SQLParser::SelectorContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterSelector(this);
+}
+
+void SQLParser::SelectorContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitSelector(this);
+}
+
 
 antlrcpp::Any SQLParser::SelectorContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -2600,6 +3079,18 @@ size_t SQLParser::IdentifiersContext::getRuleIndex() const {
   return SQLParser::RuleIdentifiers;
 }
 
+void SQLParser::IdentifiersContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterIdentifiers(this);
+}
+
+void SQLParser::IdentifiersContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitIdentifiers(this);
+}
+
 
 antlrcpp::Any SQLParser::IdentifiersContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -2682,6 +3173,18 @@ size_t SQLParser::OperateContext::getRuleIndex() const {
   return SQLParser::RuleOperate;
 }
 
+void SQLParser::OperateContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterOperate(this);
+}
+
+void SQLParser::OperateContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitOperate(this);
+}
+
 
 antlrcpp::Any SQLParser::OperateContext::accept(tree::ParseTreeVisitor *visitor) {
   if (auto parserVisitor = dynamic_cast<SQLVisitor*>(visitor))
@@ -2759,6 +3262,18 @@ tree::TerminalNode* SQLParser::AggregatorContext::Sum() {
 
 size_t SQLParser::AggregatorContext::getRuleIndex() const {
   return SQLParser::RuleAggregator;
+}
+
+void SQLParser::AggregatorContext::enterRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->enterAggregator(this);
+}
+
+void SQLParser::AggregatorContext::exitRule(tree::ParseTreeListener *listener) {
+  auto parserListener = dynamic_cast<SQLListener *>(listener);
+  if (parserListener != nullptr)
+    parserListener->exitAggregator(this);
 }
 
 

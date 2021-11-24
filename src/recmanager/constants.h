@@ -10,6 +10,8 @@ enum AttrType
     VARCHAR
 };
 
+const std::string Type2String[] = {"ANY", "INT", "FLOAT", "VARCHAR"};
+
 enum CompOp
 {
     L,

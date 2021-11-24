@@ -67,6 +67,7 @@ public:
     {
         if (openedID < 0)
             return false;
+        bpm->close();
         fm->closeFile(openedID);
         openedID = -1;
         return true;

@@ -86,3 +86,5 @@ install(TARGETS minisql
         COMPONENT dev 
         )
 
+SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/run)
+

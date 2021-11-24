@@ -120,12 +120,6 @@ public:
             return false;
         }
 
-        if (dbOpened)
-        {
-            system("cd ..");
-        }
-        std::string prefix = "cd ";
-        system((prefix + dbName).c_str());
         dbOpened = true;
         openedDbName = dbName;
         return true;
@@ -134,18 +128,21 @@ public:
     {
         if (!dbOpened)
             return false;
-        std::string prefix = "cd ..";
-        system(prefix.c_str());
         dbOpened = false;
         return true;
     }
     bool createTable(const std::string tableName, const std::vector<AttrInfo> &attributes)
     {
+        if (!dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
         int offset = 0;
         RID rid;
         AttrCat attrCat;
-        strcpy(attrCat.attrName, tableName.c_str());
-        rm->OpenFile("attrcat", attrCatHandle);
+        strcpy(attrCat.relName, tableName.c_str());
+        rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
         for (auto info : attributes)
         {
             attrCat.type = info.attrType;
@@ -153,41 +150,56 @@ public:
             attrCat.indexNo = -1;
             attrCat.offset = offset;
             strcpy(attrCat.attrName, info.attrName.c_str());
+            attrCat.nullable = info.nullable;
+            attrCat.defaultValid = info.defaultValid;
+            memcpy(attrCat.defaultVal, &info.defVal, info.attrLength);
             offset += info.attrLength;
             attrCatHandle.insertRec(reinterpret_cast<DataType>(&attrCat), rid);
         }
         rm->CloseFile("attrcat");
 
-        rm->CreateFile(tableName, offset);
+        rm->CreateFile(openedDbName + "/" + tableName, offset);
+
         RelCat relCat;
         strcpy(relCat.relName, tableName.c_str());
         relCat.tupleLength = offset;
         relCat.attrCount = attributes.size();
         relCat.indexCount = 0;
-        rm->OpenFile("relcat", relCatHandle);
+        rm->OpenFile(openedDbName + "/relcat", relCatHandle);
         relCatHandle.insertRec(reinterpret_cast<DataType>(&relCat), rid);
-        rm->CloseFile("relcat");
+        rm->CloseFile(openedDbName + "/relcat");
         return true;
     }
     bool dropTable(const std::string tableName)
     {
+        if (!dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
         FileScan scan;
         Record rec;
         char value[100] = "\0";
         strcpy(value, tableName.c_str());
-        rm->OpenFile("relcat", relCatHandle);
+        rm->OpenFile(openedDbName + "/relcat", relCatHandle);
         scan.openScan(relCatHandle, AttrType::VARCHAR, 100, 0, CompOp::E, value);
+        RID rid(-1, -1);
         while (scan.getNextRec(rec))
         {
             rm->DestroyFile(tableName);
-            RID rid;
             rec.getRID(rid);
             relCatHandle.deleteRec(rid);
         }
         scan.closeScan();
-        rm->CloseFile("relcat");
+        rm->CloseFile(openedDbName + "/relcat");
 
-        rm->OpenFile("attrcat", attrCatHandle);
+        if (!rid.valid())
+        {
+            std::cout << "Table " << tableName << " not exists." << std::endl;
+            return false;
+        }
+
+        rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
         scan.openScan(attrCatHandle, AttrType::VARCHAR, 100, 0, CompOp::E, value);
         while (scan.getNextRec(rec))
         {
@@ -201,7 +213,7 @@ public:
             attrCatHandle.deleteRec(rid);
         }
         scan.closeScan();
-        rm->CloseFile("attrcat");
+        rm->CloseFile(openedDbName + "/attrcat");
 
         return true;
     }
@@ -347,9 +359,9 @@ public:
     }
     bool showAllDb()
     {
-        std::cout << "|----------------" << std::endl
-                  << "|   databases   " << std::endl
-                  << "|----------------" << std::endl;
+        std::cout << "+----------------+" << std::endl
+                  << "|   databases    |" << std::endl
+                  << "+----------------+" << std::endl;
         rm->OpenFile("dbcat", dbCatHandle);
         FileScan fs;
         fs.openScan(dbCatHandle, AttrType::VARCHAR, DBNAME_MAX_BYTES, 0, CompOp::NO, nullptr);
@@ -359,13 +371,87 @@ public:
         {
             DataType tmp;
             rec.getData(tmp);
-            std::cout << "| " << tmp << std::endl;
+            std::cout << "|" << std::left << setw(16) << tmp << "|" << std::endl;
             count++;
         }
-        std::cout << "|----------------" << std::endl;
+        std::cout << "+----------------+" << std::endl;
         std::cout << count << " database(s) stored." << std::endl;
         fs.closeScan();
         rm->CloseFile("dbcat");
+        return true;
+    }
+    bool showAllTables()
+    {
+        if (!dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
+        std::cout << "+----------------+" << std::endl
+                  << "|     tables     |" << std::endl
+                  << "+----------------+" << std::endl;
+        rm->OpenFile(openedDbName + "/relcat", relCatHandle);
+        FileScan fs;
+        fs.openScan(relCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, 0, CompOp::NO, nullptr);
+        Record rec;
+        int count = 0;
+        while (fs.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            std::cout << "|" << std::left << setw(16) << tmp << "|" << std::endl;
+            count++;
+        }
+        std::cout << "+----------------+" << std::endl;
+        std::cout << count << " table(s) stored." << std::endl;
+        fs.closeScan();
+        rm->CloseFile(openedDbName + "/relcat");
+        return true;
+    }
+    bool descTable(std::string tableName)
+    {
+        if (!dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
+
+        FileScan fs;
+        Record rec;
+        char value[100] = "\0";
+        strcpy(value, tableName.c_str());
+        rm->OpenFile(openedDbName + "/relcat", relCatHandle);
+        fs.openScan(relCatHandle, AttrType::VARCHAR, 100, 0, CompOp::E, value);
+        RID rid(-1, -1);
+        while (fs.getNextRec(rec))
+        {
+            rec.getRID(rid);
+        }
+        fs.closeScan();
+        rm->CloseFile(openedDbName + "/relcat");
+
+        if (!rid.valid())
+        {
+            std::cout << "Table " << tableName << " not exists." << std::endl;
+            return false;
+        }
+
+        std::cout << "+---------------+--------------+------+---------+" << std::endl
+                  << "|     Field     |     Type     | Null | Default |" << std::endl
+                  << "+---------------+--------------+------+---------+" << std::endl;
+        rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
+        fs.openScan(attrCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(AttrCat, AttrCat::relName), CompOp::E, value);
+        AttrCat attrcat;
+        while (fs.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            memcpy(&attrcat, tmp, sizeof(AttrCat));
+            std::cout << attrcat << std::endl;
+        }
+        std::cout << "+---------------+--------------+------+---------+" << std::endl;
+        fs.closeScan();
+        rm->CloseFile(openedDbName + "/attrcat");
         return true;
     }
 };
