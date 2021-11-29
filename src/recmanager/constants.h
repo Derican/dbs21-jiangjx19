@@ -29,7 +29,9 @@ enum CompOp
     E,
     NE,
     NO,
-    IN
+    IN,
+    ISNULL,
+    ISNOTNULL
 };
 
 union defaultValue
@@ -43,6 +45,7 @@ struct CompareCondition
 {
     CompOp op;
     AttrType type;
+    int attrIdx;
     int offset;
     int len;
     defaultValue val;

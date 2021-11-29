@@ -138,7 +138,12 @@ public:
             std::cout << "No database used." << std::endl;
             return false;
         }
-        int offset = 0;
+        if (attributes.size() <= 0)
+        {
+            std::cout << "Table must contain at least one column." << std::endl;
+            return false;
+        }
+        int offset = (attributes.size() - 1) / 8 + 1;
         RID rid;
         AttrCat attrCat;
         strcpy(attrCat.relName, tableName.c_str());
@@ -152,7 +157,7 @@ public:
             strcpy(attrCat.attrName, info.attrName.c_str());
             attrCat.nullable = info.nullable;
             attrCat.defaultValid = info.defaultValid;
-            memcpy(attrCat.defaultVal, &info.defVal, info.attrLength);
+            attrCat.defaultVal = info.defVal;
             offset += info.attrLength;
             attrCatHandle.insertRec(reinterpret_cast<DataType>(&attrCat), rid);
         }
@@ -323,6 +328,41 @@ public:
             offsets.push_back(cat->offset);
             types.push_back(cat->type);
             typeLens.push_back(cat->typeLen);
+        }
+        scan.closeScan();
+        rm->CloseFile(openedDbName + "/attrcat");
+    }
+    bool getAllAttr(const std::string &tableName, std::vector<std::string> &attrName, std::vector<int> &offsets, std::vector<AttrType> &types, std::vector<int> &typeLens, std::vector<bool> &nulls, std::vector<bool> &defaultValids, std::vector<defaultValue> &defaults)
+    {
+        if (!dbOpened)
+            return false;
+        FileScan scan;
+        Record rec;
+        char value[ATTRNAME_MAX_BYTES] = "\0";
+        strcpy(value, tableName.c_str());
+
+        rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
+        scan.openScan(attrCatHandle, AttrType::VARCHAR, ATTRNAME_MAX_BYTES, offsetof(AttrCat, AttrCat::relName), CompOp::E, value);
+        AttrCat *cat = nullptr;
+        attrName.clear();
+        offsets.clear();
+        types.clear();
+        typeLens.clear();
+        nulls.clear();
+        defaultValids.clear();
+        defaults.clear();
+        while (scan.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            cat = reinterpret_cast<AttrCat *>(tmp);
+            attrName.push_back(std::string(cat->attrName));
+            offsets.push_back(cat->offset);
+            types.push_back(cat->type);
+            typeLens.push_back(cat->typeLen);
+            nulls.push_back(cat->nullable);
+            defaultValids.push_back(cat->defaultValid);
+            defaults.push_back(cat->defaultVal);
         }
         scan.closeScan();
         rm->CloseFile(openedDbName + "/attrcat");

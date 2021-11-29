@@ -102,8 +102,11 @@ public:
                     if (cond.op == CompOp::IN)
                         for (auto val : cond.rhsValues)
                             cc.vals.push_back(val.pData);
+                    else if (cond.op == CompOp::ISNULL || cond.op == CompOp::ISNOTNULL)
+                        cc.offset = idx;
                     else
                         cc.val = cond.rhsValue.pData;
+                    cc.attrIdx = idx;
                     conds.push_back(cc);
                 }
 
@@ -119,7 +122,7 @@ public:
             {
                 DataType tmp;
                 rec.getData(tmp);
-                printRecord(tmp, attrName, offsets, types, typeLens);
+                printRecord(tmp, allAttrName, attrName, offsets, types, typeLens);
                 std::cout << std::endl;
             }
             printRecEnd(attrName);
@@ -144,26 +147,48 @@ public:
         }
         std::vector<std::string> attrName;
         std::vector<int> offsets;
+        std::vector<bool> nulls;
         std::vector<AttrType> types;
         std::vector<int> typeLens;
+        std::vector<bool> defaultValids;
+        std::vector<defaultValue> defaults;
 
-        sm->getAllAttr(tableName, attrName, offsets, types, typeLens);
+        sm->getAllAttr(tableName, attrName, offsets, types, typeLens, nulls, defaultValids, defaults);
 
         int tupleLength = offsets.back() + typeLens.back();
         DataType newData = new char[tupleLength];
+        memset(newData, 0, tupleLength);
+        SlotMap nullMap(newData, attrName.size());
         for (auto i = 0; i < values.size(); i++)
         {
-            if (values[i].type != types[i])
+            if (values[i].type == AttrType::NONE)
+            {
+                if (!nulls[i])
+                {
+                    std::cout << "Attribute " << attrName[i] << " cannot be NULL." << std::endl;
+                    delete[] newData;
+                    return false;
+                }
+                nullMap.set(i);
+            }
+            else if (values[i].type != types[i])
             {
                 std::cout << "Type mismatched at attribute " << attrName[i] << '.' << std::endl;
+                delete[] newData;
                 return false;
             }
             if (values[i].len > typeLens[i])
             {
                 std::cout << "WARNING: too long attribute " << attrName[i] << " ignored." << std::endl;
+                delete[] newData;
                 return false;
             }
             memcpy(newData + offsets[i], &values[i].pData, typeLens[i]);
+        }
+        for (auto i = values.size(); i < attrName.size(); i++)
+        {
+            if (defaultValids[i])
+                memcpy(newData + offsets[i], &defaults[i], typeLens[i]);
         }
 
         FileHandle fh;
@@ -209,36 +234,45 @@ public:
         return true;
     }
 
-    bool printRecord(const DataType &rec, const std::vector<std::string> &attrName, const std::vector<int> &offsets, const std::vector<AttrType> &types, const std::vector<int> typeLens)
+    bool printRecord(const DataType &rec, const std::vector<std::string> &allAttrName, const std::vector<std::string> &attrName, const std::vector<int> &offsets, const std::vector<AttrType> &types, const std::vector<int> typeLens)
     {
+        SlotMap nullMap(rec, allAttrName.size());
         for (int i = 0; i < attrName.size(); i++)
         {
+            auto it = std::find(allAttrName.begin(), allAttrName.end(), attrName[i]);
+            auto idx = std::distance(allAttrName.begin(), it);
             std::cout << "|" << std::left << std::setw(attrName[i].size() + 2);
-            switch (types[i])
+            if (nullMap.test(idx))
+                std::cout << "NULL";
+            else
             {
-            case AttrType::INT:
-            {
-                int *val = new int;
-                memcpy(val, rec + offsets[i], sizeof(int));
-                std::cout << *val;
-                break;
-            }
-            case AttrType::FLOAT:
-            {
-                float *val = new float;
-                memcpy(val, rec + offsets[i], sizeof(float));
-                std::cout << *val;
-                break;
-            }
-            case AttrType::VARCHAR:
-            {
-                char *val = new char[typeLens[i]];
-                memcpy(val, rec + offsets[i], typeLens[i]);
-                std::cout << val;
-                break;
-            }
-            default:
-                break;
+                switch (types[i])
+                {
+                case AttrType::INT:
+                {
+                    int *val = new int;
+                    memcpy(val, rec + offsets[i], sizeof(int));
+                    std::cout << *val;
+                    break;
+                }
+                case AttrType::FLOAT:
+                {
+                    float *val = new float;
+                    memcpy(val, rec + offsets[i], sizeof(float));
+                    std::cout << *val;
+                    break;
+                }
+                case AttrType::VARCHAR:
+                {
+                    char *val = new char[typeLens[i]];
+                    memcpy(val, rec + offsets[i], typeLens[i]);
+                    std::cout << val;
+                    break;
+                }
+                default:
+                    std::cout << "NULL";
+                    break;
+                }
             }
         }
         std::cout << "|";

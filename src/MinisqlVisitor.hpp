@@ -98,6 +98,11 @@ public:
                 condition.lhs.relName = column->Identifier(0)->getText();
                 condition.lhs.attrName = column->Identifier(1)->getText();
             }
+            auto idx = where->getText().find("NOT");
+            if (idx == std::string::npos)
+                condition.op = CompOp::ISNULL;
+            else
+                condition.op = CompOp::ISNOTNULL;
         }
         else if (auto where = dynamic_cast<SQLParser::Where_operator_expressionContext *>(ctx))
         {

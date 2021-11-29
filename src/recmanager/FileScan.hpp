@@ -84,10 +84,17 @@ public:
         else
             return compareSingle(src, op, type, offset, len, val);
     }
-    bool compareSingle(DataType src, CompOp op, AttrType type, int offset, int len, void *val)
+    bool compareSingle(DataType src, CompOp op, AttrType type, int offset, int len, void *val, int attrIdx = -1)
     {
+        SlotMap nullMap(src, fh.slotSize);
         if (op == CompOp::NO)
             return true;
+        if (op == CompOp::ISNULL)
+            return nullMap.test(offset);
+        if (op == CompOp::ISNOTNULL)
+            return !nullMap.test(offset);
+        if (multiCondition && nullMap.test(attrIdx))
+            return false;
         switch (type)
         {
         case AttrType::INT:
@@ -148,7 +155,7 @@ public:
             {
                 bool flag = false;
                 for (auto val : cond.vals)
-                    if (compareSingle(src, CompOp::E, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&val)))
+                    if (compareSingle(src, CompOp::E, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&val), cond.attrIdx))
                     {
                         flag = true;
                         break;
@@ -156,7 +163,7 @@ public:
                 if (!flag)
                     return false;
             }
-            else if (!compareSingle(src, cond.op, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.val)))
+            else if (!compareSingle(src, cond.op, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.val), cond.attrIdx))
                 return false;
         }
         return true;

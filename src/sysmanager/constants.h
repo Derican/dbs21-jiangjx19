@@ -49,7 +49,7 @@ struct AttrCat
     int indexNo;
     int nullable;
     int defaultValid;
-    char defaultVal[VARCHAR_MAX_BYTES];
+    defaultValue defaultVal;
     friend std::ostream &operator<<(std::ostream &out, AttrCat value)
     {
         out << "|" << std::setw(15) << std::left << value.attrName
@@ -64,20 +64,18 @@ struct AttrCat
             {
             case AttrType::INT:
             {
-                int *val = reinterpret_cast<int *>(value.defaultVal);
-                out << "|" << std::left << std::setw(9) << *val << "|";
+                out << "|" << std::left << std::setw(9) << value.defaultVal.Int << "|";
                 break;
             }
             case AttrType::FLOAT:
             {
-                float *val = reinterpret_cast<float *>(value.defaultVal);
-                out << "|" << std::left << std::setw(9) << *val << "|";
+                out << "|" << std::left << std::setw(9) << value.defaultVal.Float << "|";
                 break;
             }
             case AttrType::VARCHAR:
             {
                 char val[10] = {"\0"};
-                memcpy(val, value.defaultVal, 9);
+                memcpy(val, value.defaultVal.String, 9);
                 out << "|" << std::left << std::setw(9) << val << "|";
                 break;
             }
