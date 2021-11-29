@@ -1,4 +1,5 @@
 #include <iostream>
+#include <math.h>
 #include "antlr4-runtime.h"
 #include "SQLLexer.h"
 #include "SQLParser.h"
@@ -26,6 +27,85 @@ public:
             return AttrType::VARCHAR;
         else
             return AttrType::ANY;
+    }
+    Value getValue(SQLParser::ValueContext *ctx)
+    {
+        Value val;
+        if (ctx->Integer())
+        {
+            val.type = AttrType::INT;
+            val.len = 4;
+            val.pData.Int = std::stoi(ctx->Integer()->getText(), nullptr);
+        }
+        else if (ctx->Float())
+        {
+            val.type = AttrType::FLOAT;
+            val.len = 4;
+            val.pData.Float = std::stof(ctx->Float()->getText(), nullptr);
+        }
+        else if (ctx->String())
+        {
+            std::string str = ctx->String()->getText();
+            val.type = AttrType::VARCHAR;
+            val.len = std::min(VARCHAR_MAX_BYTES - 1, (int)str.size() - 2);
+            memcpy(val.pData.String, str.c_str() + 1, val.len);
+        }
+        else if (ctx->Null())
+        {
+            val.type = AttrType::NONE;
+        }
+        return val;
+    }
+    Condition getCondition(SQLParser::Where_clauseContext *ctx)
+    {
+        Condition condition;
+        if (auto where = dynamic_cast<SQLParser::Where_in_listContext *>(ctx))
+        {
+            auto column = where->column();
+            if (column->Identifier().size() == 1)
+            {
+                condition.lhs.relName = "";
+                condition.lhs.attrName = column->Identifier(0)->getText();
+            }
+            else
+            {
+                condition.lhs.relName = column->Identifier(0)->getText();
+                condition.lhs.attrName = column->Identifier(1)->getText();
+            }
+            condition.op = CompOp::IN;
+            for (auto value : where->value_list()->value())
+            {
+                Value val = getValue(value);
+                condition.rhsValues.push_back(val);
+            }
+        }
+        else if (auto where = dynamic_cast<SQLParser::Where_in_selectContext *>(ctx))
+        {
+        }
+        else if (auto where = dynamic_cast<SQLParser::Where_like_stringContext *>(ctx))
+        {
+        }
+        else if (auto where = dynamic_cast<SQLParser::Where_nullContext *>(ctx))
+        {
+            auto column = where->column();
+            if (column->Identifier().size() == 1)
+            {
+                condition.lhs.relName = "";
+                condition.lhs.attrName = column->Identifier(0)->getText();
+            }
+            else
+            {
+                condition.lhs.relName = column->Identifier(0)->getText();
+                condition.lhs.attrName = column->Identifier(1)->getText();
+            }
+        }
+        else if (auto where = dynamic_cast<SQLParser::Where_operator_expressionContext *>(ctx))
+        {
+        }
+        else if (auto where = dynamic_cast<SQLParser::Where_in_listContext *>(ctx))
+        {
+        }
+        return condition;
     }
     MinisqlVisitor() {}
     MinisqlVisitor(SystemManager *_sm, QueryManager *_qm)
@@ -172,6 +252,52 @@ public:
     {
         std::string tableName = ctx->Identifier()->getText();
         sm->descTable(tableName);
+        antlrcpp::Any res;
+        return res;
+    }
+
+    antlrcpp::Any visitInsert_into_table(SQLParser::Insert_into_tableContext *ctx) override
+    {
+        std::string tableName = ctx->Identifier()->getText();
+        std::vector<Value> values;
+        for (auto value_list : ctx->value_lists()->value_list())
+        {
+            values.clear();
+            for (auto value : value_list->value())
+            {
+                Value val = getValue(value);
+                values.push_back(val);
+            }
+            qm->insert(tableName, values);
+        }
+        antlrcpp::Any res;
+        return res;
+    }
+
+    antlrcpp::Any visitSelect_table(SQLParser::Select_tableContext *ctx) override
+    {
+        std::vector<RelAttr> selectors;
+        std::vector<std::string> relations;
+        std::vector<Condition> conditions;
+
+        for (auto selector : ctx->selectors()->selector())
+        {
+            std::string relattr = selector->getText();
+            int idx = relattr.find('.');
+            RelAttr sel(relattr.substr(0, idx), relattr.substr(idx + 1, relattr.size() - idx - 1));
+            if (idx < 0)
+                sel.relName = "";
+            selectors.push_back(sel);
+        }
+
+        for (auto relation : ctx->identifiers()->Identifier())
+            relations.push_back(relation->getText());
+
+        if (ctx->where_and_clause())
+            for (auto where : ctx->where_and_clause()->where_clause())
+                conditions.push_back(getCondition(where));
+
+        qm->select(selectors, relations, conditions);
         antlrcpp::Any res;
         return res;
     }

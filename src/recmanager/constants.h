@@ -2,15 +2,23 @@
 
 #include "../utils/pagedef.h"
 
+#include <vector>
+
+#define DBNAME_MAX_BYTES 100
+#define RELNAME_MAX_BYTES 100
+#define ATTRNAME_MAX_BYTES 100
+#define VARCHAR_MAX_BYTES 100
+
 enum AttrType
 {
     ANY,
     INT,
     FLOAT,
-    VARCHAR
+    VARCHAR,
+    NONE
 };
 
-const std::string Type2String[] = {"ANY", "INT", "FLOAT", "VARCHAR"};
+const std::string Type2String[] = {"ANY", "INT", "FLOAT", "VARCHAR", "NONE"};
 
 enum CompOp
 {
@@ -20,7 +28,25 @@ enum CompOp
     G,
     E,
     NE,
-    NO
+    NO,
+    IN
+};
+
+union defaultValue
+{
+    int Int;
+    float Float;
+    char String[VARCHAR_MAX_BYTES];
+};
+
+struct CompareCondition
+{
+    CompOp op;
+    AttrType type;
+    int offset;
+    int len;
+    defaultValue val;
+    std::vector<defaultValue> vals;
 };
 
 struct FileHeader

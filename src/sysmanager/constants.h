@@ -7,18 +7,6 @@
 #include <memory.h>
 #include "../recmanager/constants.h"
 
-#define DBNAME_MAX_BYTES 100
-#define RELNAME_MAX_BYTES 100
-#define ATTRNAME_MAX_BYTES 100
-#define VARCHAR_MAX_BYTES 100
-
-union defaultValue
-{
-    int Int;
-    float Float;
-    char String[VARCHAR_MAX_BYTES];
-};
-
 struct AttrInfo
 {
     std::string attrName;

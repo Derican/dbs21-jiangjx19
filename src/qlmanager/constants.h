@@ -2,17 +2,31 @@
 
 #include <string>
 #include "../recmanager/constants.h"
+#include "../sysmanager/constants.h"
 
 struct RelAttr
 {
     std::string relName;
     std::string attrName;
+    RelAttr() {}
+    RelAttr(std::string rel, std::string attr)
+    {
+        relName = rel;
+        attrName = attr;
+    }
 };
 
 struct Value
 {
     AttrType type;
-    unsigned int *pData;
+    int len;
+    defaultValue pData;
+    Value()
+    {
+        type = AttrType::NONE;
+        len = 0;
+        memset(&pData, 0, VARCHAR_MAX_BYTES);
+    }
 };
 
 struct Condition
@@ -22,4 +36,5 @@ struct Condition
     int bRhsIsAttr;
     RelAttr rhs;
     Value rhsValue;
+    std::vector<Value> rhsValues;
 };

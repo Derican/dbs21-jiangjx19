@@ -51,7 +51,7 @@ public:
         rid.getSlotID(slotID);
         BufType b = bpm->getPage(fileID, pageID, index);
         DataType d = reinterpret_cast<DataType>(b);
-        rec = Record(rid, &d[fh.slotMapSize + fh.slotSize * slotID]);
+        rec.set(rid, &d[fh.slotMapSize + fh.slotSize * slotID], fh.slotSize);
         bpm->access(index);
         return true;
     }

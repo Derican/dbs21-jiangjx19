@@ -3,6 +3,8 @@
 #include "constants.h"
 #include "FileHandle.hpp"
 
+#include <vector>
+
 class FileScan
 {
 private:
@@ -17,6 +19,8 @@ private:
     void *val;
     int pageID, slotID;
     DataType curPage;
+    std::vector<CompareCondition> conditions;
+    bool multiCondition;
 
 public:
     FileScan()
@@ -40,6 +44,16 @@ public:
         pageID = 1;
         slotID = 0;
         curPage = nullptr;
+        multiCondition = false;
+    }
+    bool openScan(const FileHandle &fileHandle, std::vector<CompareCondition> conditions)
+    {
+        handle = fileHandle;
+        fileHandle.getFileID(fileID);
+        fileHandle.getFileHeader(fh);
+        fileHandle.getBufPageManager(bpm);
+        this->conditions = conditions;
+        multiCondition = true;
     }
     bool getNextRec(Record &rec)
     {
@@ -65,6 +79,13 @@ public:
     bool closeScan() {}
     bool compare(DataType src)
     {
+        if (multiCondition)
+            return compareMultiple(src);
+        else
+            return compareSingle(src, op, type, offset, len, val);
+    }
+    bool compareSingle(DataType src, CompOp op, AttrType type, int offset, int len, void *val)
+    {
         if (op == CompOp::NO)
             return true;
         switch (type)
@@ -73,6 +94,21 @@ public:
         {
             int *lhs = reinterpret_cast<int *>(src + offset);
             int *rhs = reinterpret_cast<int *>(val);
+            switch (op)
+            {
+            case CompOp::E:
+                return *lhs == *rhs;
+                break;
+
+            default:
+                return false;
+                break;
+            }
+        }
+        case AttrType::FLOAT:
+        {
+            float *lhs = reinterpret_cast<float *>(src + offset);
+            float *rhs = reinterpret_cast<float *>(val);
             switch (op)
             {
             case CompOp::E:
@@ -103,5 +139,26 @@ public:
             return false;
             break;
         }
+    }
+    bool compareMultiple(DataType src)
+    {
+        for (auto cond : conditions)
+        {
+            if (cond.op == CompOp::IN)
+            {
+                bool flag = false;
+                for (auto val : cond.vals)
+                    if (compareSingle(src, CompOp::E, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&val)))
+                    {
+                        flag = true;
+                        break;
+                    }
+                if (!flag)
+                    return false;
+            }
+            else if (!compareSingle(src, cond.op, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.val)))
+                return false;
+        }
+        return true;
     }
 };

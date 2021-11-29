@@ -282,10 +282,8 @@ public:
             cat = reinterpret_cast<AttrCat *>(tmp);
             if (strcmp(cat->attrName, attrName.c_str()) == 0)
             {
-                if (cat->indexNo >= 0)
+                if (cat->indexNo < 0)
                     return false;
-                cat->indexNo = cat->offset;
-                im->createIndex(tableName, cat->indexNo, cat->type, cat->typeLen);
                 break;
             }
         }
@@ -296,7 +294,7 @@ public:
         cat->indexNo = -1;
         RID rid;
         rec.getRID(rid);
-        Record newRec(rid, reinterpret_cast<DataType>(cat));
+        Record newRec(rid, reinterpret_cast<DataType>(cat), sizeof(AttrCat));
         attrCatHandle.updateRec(newRec);
         return true;
     }
@@ -306,11 +304,11 @@ public:
             return false;
         FileScan scan;
         Record rec;
-        char value[100] = "\0";
+        char value[ATTRNAME_MAX_BYTES] = "\0";
         strcpy(value, tableName.c_str());
 
-        rm->OpenFile("attrcat", attrCatHandle);
-        scan.openScan(attrCatHandle, AttrType::VARCHAR, 100, 0, CompOp::E, value);
+        rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
+        scan.openScan(attrCatHandle, AttrType::VARCHAR, ATTRNAME_MAX_BYTES, offsetof(AttrCat, AttrCat::relName), CompOp::E, value);
         AttrCat *cat = nullptr;
         attrName.clear();
         offsets.clear();
@@ -327,7 +325,36 @@ public:
             typeLens.push_back(cat->typeLen);
         }
         scan.closeScan();
-        rm->CloseFile("attrcat");
+        rm->CloseFile(openedDbName + "/attrcat");
+    }
+    bool getAttrInfo(const std::string &attrName, int &offset, AttrType &type, int &typeLen, std::string &tableName)
+    {
+        if (!dbOpened)
+            return false;
+        FileScan scan;
+        Record rec;
+        char value[100] = "\0";
+        strcpy(value, attrName.c_str());
+
+        rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
+        scan.openScan(attrCatHandle, AttrType::VARCHAR, ATTRNAME_MAX_BYTES, offsetof(AttrCat, AttrCat::attrName), CompOp::E, value);
+        AttrCat *cat = nullptr;
+        bool flag = false;
+        while (scan.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            cat = reinterpret_cast<AttrCat *>(tmp);
+            if (flag)
+                std::cout << "WARNING: duplicate column name in table " << cat->relName << "." << std::endl;
+            tableName = cat->relName;
+            offset = cat->offset;
+            type = cat->type;
+            typeLen = cat->typeLen;
+            flag = true;
+        }
+        scan.closeScan();
+        rm->CloseFile(openedDbName + "/attrcat");
     }
     bool getAttrInfo(const std::string &tableName, const std::string &attrName, int &offset, AttrType &type, int &typeLen)
     {
@@ -335,11 +362,11 @@ public:
             return false;
         FileScan scan;
         Record rec;
-        char value[100] = "\0";
+        char value[RELNAME_MAX_BYTES] = "\0";
         strcpy(value, tableName.c_str());
 
         rm->OpenFile("attrcat", attrCatHandle);
-        scan.openScan(attrCatHandle, AttrType::VARCHAR, 100, 0, CompOp::E, value);
+        scan.openScan(attrCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(AttrCat, AttrCat::relName), CompOp::E, value);
         AttrCat *cat = nullptr;
         while (scan.getNextRec(rec))
         {
@@ -356,6 +383,14 @@ public:
         }
         scan.closeScan();
         rm->CloseFile("attrcat");
+
+        if (cat)
+            return true;
+        else
+        {
+            std::cout << "Attribute " << tableName << "." << attrName << " not exists." << std::endl;
+            return false;
+        }
     }
     bool showAllDb()
     {
@@ -453,5 +488,26 @@ public:
         fs.closeScan();
         rm->CloseFile(openedDbName + "/attrcat");
         return true;
+    }
+    bool checkTableExists(const std::string &tableName)
+    {
+        if (!dbOpened)
+            return false;
+        FileScan scan;
+        Record rec;
+        char value[RELNAME_MAX_BYTES] = "\0";
+        strcpy(value, tableName.c_str());
+        rm->OpenFile(openedDbName + "/relcat", relCatHandle);
+        scan.openScan(relCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(RelCat, RelCat::relName), CompOp::E, value);
+        RID rid(-1, -1);
+        while (scan.getNextRec(rec))
+        {
+            scan.closeScan();
+            rm->CloseFile(openedDbName + "/relcat");
+            return true;
+        }
+        scan.closeScan();
+        rm->CloseFile(openedDbName + "/relcat");
+        return false;
     }
 };
