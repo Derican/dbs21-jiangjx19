@@ -283,7 +283,111 @@ public:
         return true;
     }
 
-    bool update(const std::string &relName, const RelAttr &updAttr, bool bIsValue, const RelAttr &rhs, const Value &rhsValue, const std::vector<Condition> &conditions) {}
+    bool update(const std::string &tableName, const std::vector<Condition> &sets, const std::vector<Condition> &conditions)
+    {
+        if (!sm->dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
+        if (!sm->checkTableExists(tableName))
+        {
+            std::cout << "Table " << tableName << " not exists." << std::endl;
+            return false;
+        }
+
+        // get allAttrs
+        std::vector<std::string> allAttrName;
+        std::vector<int> allOffsets;
+        std::vector<AttrType> allTypes;
+        std::vector<int> allTypeLens;
+        std::vector<bool> nulls;
+        std::vector<bool> defaultValids;
+        std::vector<defaultValue> defaults;
+
+        sm->getAllAttr(tableName, allAttrName, allOffsets, allTypes, allTypeLens, nulls, defaultValids, defaults);
+        // get value
+        FileHandle fh;
+        rm->OpenFile(sm->openedDbName + "/" + tableName, fh);
+        FileScan fs;
+
+        std::vector<CompareCondition> conds;
+        for (auto cond : conditions)
+        {
+            auto it = std::find(allAttrName.begin(), allAttrName.end(), cond.lhs.attrName);
+            auto idx = std::distance(allAttrName.begin(), it);
+            CompareCondition cc;
+            cc.op = cond.op;
+            cc.offset = allOffsets[idx];
+            cc.type = allTypes[idx];
+            cc.len = allTypeLens[idx];
+            if (cond.op == CompOp::IN)
+                for (auto val : cond.rhsValues)
+                    cc.vals.push_back(val.pData);
+            else
+            {
+                if (cond.bRhsIsAttr == 1)
+                {
+                    cc.rhsAttr = true;
+                    auto _it = std::find(allAttrName.begin(), allAttrName.end(), cond.rhs.attrName);
+                    auto _idx = std::distance(allAttrName.begin(), _it);
+                    cc.rhsOffset = allOffsets[_idx];
+                }
+                else
+                {
+                    cc.rhsAttr = false;
+                    cc.val = cond.rhsValue.pData;
+                }
+            }
+            cc.attrIdx = idx;
+            conds.push_back(cc);
+        }
+
+        fs.openScan(fh, conds);
+        Record rec;
+        while (fs.getNextRec(rec))
+        {
+            RID rid;
+            rec.getRID(rid);
+            DataType tmp;
+            rec.getData(tmp);
+
+            SlotMap nullMap(tmp, allAttrName.size());
+            for (auto set_c : sets)
+            {
+                auto it = std::find(allAttrName.begin(), allAttrName.end(), set_c.lhs.attrName);
+                auto idx = std::distance(allAttrName.begin(), it);
+
+                if (set_c.rhsValue.type == AttrType::NONE)
+                {
+                    if (!nulls[idx])
+                    {
+                        std::cout << "Attribute " << allAttrName[idx] << " cannot be NULL." << std::endl;
+                        return false;
+                    }
+                    nullMap.set(idx);
+                }
+                else if (set_c.rhsValue.type != allTypes[idx])
+                {
+                    std::cout << "Type mismatched at attribute " << allAttrName[idx] << '.' << std::endl;
+                    return false;
+                }
+                else
+                    nullMap.remove(idx);
+                if (set_c.rhsValue.len > allTypeLens[idx])
+                {
+                    std::cout << "WARNING: too long attribute " << allAttrName[idx] << " ignored." << std::endl;
+                    return false;
+                }
+
+                memcpy(tmp + allOffsets[idx], &set_c.rhsValue.pData, allTypeLens[idx]);
+            }
+            fh.updateRec(rec);
+        }
+        fs.closeScan();
+        rm->CloseFile(sm->openedDbName + "/" + tableName);
+        return true;
+    }
 
     bool printRecHeader(const std::vector<std::string> &attrName)
     {

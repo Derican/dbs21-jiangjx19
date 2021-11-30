@@ -350,6 +350,42 @@ public:
         return res;
     }
 
+    antlrcpp::Any visitUpdate_table(SQLParser::Update_tableContext *ctx) override
+    {
+        std::string tableName = ctx->Identifier()->getText();
+
+        auto set_clause = ctx->set_clause();
+
+        std::vector<Condition> sets;
+        for (auto i = 0; i < set_clause->EqualOrAssign().size(); i++)
+        {
+            Condition set_c;
+            set_c.lhs.relName = tableName;
+            set_c.lhs.attrName = set_clause->Identifier(i)->getText();
+            set_c.bRhsIsAttr = 0;
+            set_c.rhsValue = getValue(set_clause->value(i));
+            sets.push_back(set_c);
+        }
+
+        std::vector<Condition> conditions;
+        bool recursive = false;
+        std::vector<Record> results;
+
+        for (auto cond : ctx->where_and_clause()->where_clause())
+        {
+            conditions.push_back(getCondition(cond, results, recursive));
+        }
+
+        if (recursive)
+        {
+        }
+        else
+            qm->update(tableName, sets, conditions);
+
+        antlrcpp::Any res;
+        return res;
+    }
+
     antlrcpp::Any visitSelect_table(SQLParser::Select_tableContext *ctx) override
     {
         std::vector<RelAttr> selectors;
