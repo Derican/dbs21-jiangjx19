@@ -31,7 +31,7 @@ public:
         rm = nullptr;
     }
 
-    bool select(const std::vector<RelAttr> &selAttrs, const std::vector<std::string> &relations, const std::vector<Condition> &conditions)
+    bool select(const std::vector<RelAttr> &selAttrs, const std::vector<std::string> &relations, const std::vector<Condition> &conditions, std::vector<Record> &results, const bool final)
     {
         if (!sm->dbOpened)
         {
@@ -74,11 +74,10 @@ public:
                 }
             }
             // get value
-            std::vector<Record> results;
             FileHandle fh;
             rm->OpenFile(sm->openedDbName + "/" + tableName, fh);
             FileScan fs;
-            printRecHeader(attrName);
+
             if (conditions.size() == 0)
             {
                 fs.openScan(fh, AttrType::ANY, -1, -1, CompOp::NO, nullptr);
@@ -129,15 +128,19 @@ public:
             }
 
             // print
-            for (auto rec : results)
+            if (final)
             {
-                DataType tmp;
-                rec.getData(tmp);
-                printRecord(tmp, allAttrName, attrName, offsets, types, typeLens);
-                std::cout << std::endl;
+                printRecHeader(attrName);
+                for (auto rec : results)
+                {
+                    DataType tmp;
+                    rec.getData(tmp);
+                    printRecord(tmp, allAttrName, attrName, offsets, types, typeLens);
+                    std::cout << std::endl;
+                }
+                printRecEnd(attrName);
+                std::cout << results.size() << " record(s) selected." << std::endl;
             }
-            printRecEnd(attrName);
-            std::cout << results.size() << " record(s) selected." << std::endl;
 
             rm->CloseFile(sm->openedDbName + "/" + tableName);
         }
@@ -211,7 +214,74 @@ public:
         return true;
     }
 
-    bool deleta(const std::string &relName, const std::vector<Condition> &conditions) {}
+    bool deleta(const std::string &tableName, const std::vector<Condition> &conditions)
+    {
+        if (!sm->dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
+        if (!sm->checkTableExists(tableName))
+        {
+            std::cout << "Table " << tableName << " not exists." << std::endl;
+            return false;
+        }
+
+        // get allAttrs
+        std::vector<std::string> allAttrName;
+        std::vector<int> allOffsets;
+        std::vector<AttrType> allTypes;
+        std::vector<int> allTypeLens;
+        sm->getAllAttr(tableName, allAttrName, allOffsets, allTypes, allTypeLens);
+        // get value
+        FileHandle fh;
+        rm->OpenFile(sm->openedDbName + "/" + tableName, fh);
+        FileScan fs;
+
+        std::vector<CompareCondition> conds;
+        for (auto cond : conditions)
+        {
+            auto it = std::find(allAttrName.begin(), allAttrName.end(), cond.lhs.attrName);
+            auto idx = std::distance(allAttrName.begin(), it);
+            CompareCondition cc;
+            cc.op = cond.op;
+            cc.offset = allOffsets[idx];
+            cc.type = allTypes[idx];
+            cc.len = allTypeLens[idx];
+            if (cond.op == CompOp::IN)
+                for (auto val : cond.rhsValues)
+                    cc.vals.push_back(val.pData);
+            else
+            {
+                if (cond.bRhsIsAttr == 1)
+                {
+                    cc.rhsAttr = true;
+                    auto _it = std::find(allAttrName.begin(), allAttrName.end(), cond.rhs.attrName);
+                    auto _idx = std::distance(allAttrName.begin(), _it);
+                    cc.rhsOffset = allOffsets[_idx];
+                }
+                else
+                {
+                    cc.rhsAttr = false;
+                    cc.val = cond.rhsValue.pData;
+                }
+            }
+            cc.attrIdx = idx;
+            conds.push_back(cc);
+        }
+
+        fs.openScan(fh, conds);
+        Record rec;
+        while (fs.getNextRec(rec))
+        {
+            RID rid;
+            rec.getRID(rid);
+            fh.deleteRec(rid);
+        }
+        fs.closeScan();
+        rm->CloseFile(sm->openedDbName + "/" + tableName);
+        return true;
+    }
 
     bool update(const std::string &relName, const RelAttr &updAttr, bool bIsValue, const RelAttr &rhs, const Value &rhsValue, const std::vector<Condition> &conditions) {}
 

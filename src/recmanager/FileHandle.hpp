@@ -72,7 +72,6 @@ public:
     }
     bool deleteRec(const RID &rid)
     {
-
         int index, pageID, slotID;
         rid.getPageID(pageID);
         rid.getSlotID(slotID);

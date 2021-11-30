@@ -72,7 +72,7 @@ public:
             return CompOp::NE;
         return CompOp::NO;
     }
-    Condition getCondition(SQLParser::Where_clauseContext *ctx)
+    Condition getCondition(SQLParser::Where_clauseContext *ctx, std::vector<Record> &results, bool &recursive)
     {
         Condition condition;
         if (auto where = dynamic_cast<SQLParser::Where_in_listContext *>(ctx))
@@ -328,11 +328,36 @@ public:
         return res;
     }
 
+    antlrcpp::Any visitDelete_from_table(SQLParser::Delete_from_tableContext *ctx) override
+    {
+        std::string tableName = ctx->Identifier()->getText();
+        std::vector<Condition> conditions;
+
+        bool recursive = false;
+        std::vector<Record> results;
+
+        for (auto cond : ctx->where_and_clause()->where_clause())
+        {
+            conditions.push_back(getCondition(cond, results, recursive));
+        }
+
+        if (recursive)
+        {
+        }
+        else
+            qm->deleta(tableName, conditions);
+        antlrcpp::Any res;
+        return res;
+    }
+
     antlrcpp::Any visitSelect_table(SQLParser::Select_tableContext *ctx) override
     {
         std::vector<RelAttr> selectors;
         std::vector<std::string> relations;
         std::vector<Condition> conditions;
+
+        bool recursive = false;
+        std::vector<Record> results;
 
         for (auto selector : ctx->selectors()->selector())
         {
@@ -349,10 +374,47 @@ public:
 
         if (ctx->where_and_clause())
             for (auto where : ctx->where_and_clause()->where_clause())
-                conditions.push_back(getCondition(where));
+                conditions.push_back(getCondition(where, results, recursive));
 
-        qm->select(selectors, relations, conditions);
+        if (recursive)
+        {
+        }
+        else
+            qm->select(selectors, relations, conditions, results, true);
         antlrcpp::Any res;
         return res;
+    }
+
+    void visitSelect_tale_recursive(SQLParser::Select_tableContext *ctx, std::vector<Record> &results)
+    {
+        std::vector<RelAttr> selectors;
+        std::vector<std::string> relations;
+        std::vector<Condition> conditions;
+
+        bool recursive = false;
+
+        for (auto selector : ctx->selectors()->selector())
+        {
+            std::string relattr = selector->getText();
+            int idx = relattr.find('.');
+            RelAttr sel(relattr.substr(0, idx), relattr.substr(idx + 1, relattr.size() - idx - 1));
+            if (idx < 0)
+                sel.relName = "";
+            selectors.push_back(sel);
+        }
+
+        for (auto relation : ctx->identifiers()->Identifier())
+            relations.push_back(relation->getText());
+
+        if (ctx->where_and_clause())
+            for (auto where : ctx->where_and_clause()->where_clause())
+                conditions.push_back(getCondition(where, results, recursive));
+
+        if (recursive)
+        {
+        }
+        else
+            qm->select(selectors, relations, conditions, results, false);
+        return;
     }
 };
