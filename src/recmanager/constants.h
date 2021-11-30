@@ -50,6 +50,8 @@ struct CompareCondition
     int len;
     defaultValue val;
     std::vector<defaultValue> vals;
+    bool rhsAttr;
+    int rhsOffset;
 };
 
 struct FileHeader

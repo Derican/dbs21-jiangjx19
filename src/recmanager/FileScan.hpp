@@ -53,6 +53,9 @@ public:
         fileHandle.getFileHeader(fh);
         fileHandle.getBufPageManager(bpm);
         this->conditions = conditions;
+        pageID = 1;
+        slotID = 0;
+        curPage = nullptr;
         multiCondition = true;
     }
     bool getNextRec(Record &rec)
@@ -106,6 +109,21 @@ public:
             case CompOp::E:
                 return *lhs == *rhs;
                 break;
+            case CompOp::L:
+                return *lhs < *rhs;
+                break;
+            case CompOp::LE:
+                return *lhs <= *rhs;
+                break;
+            case CompOp::G:
+                return *lhs > *rhs;
+                break;
+            case CompOp::GE:
+                return *lhs >= *rhs;
+                break;
+            case CompOp::NE:
+                return *lhs != *rhs;
+                break;
 
             default:
                 return false;
@@ -120,6 +138,21 @@ public:
             {
             case CompOp::E:
                 return *lhs == *rhs;
+                break;
+            case CompOp::L:
+                return *lhs < *rhs;
+                break;
+            case CompOp::LE:
+                return *lhs <= *rhs;
+                break;
+            case CompOp::G:
+                return *lhs > *rhs;
+                break;
+            case CompOp::GE:
+                return *lhs >= *rhs;
+                break;
+            case CompOp::NE:
+                return *lhs != *rhs;
                 break;
 
             default:
@@ -136,7 +169,95 @@ public:
             case CompOp::E:
                 return strcmp(lhs, rhs) == 0;
                 break;
+            case CompOp::NE:
+                return strcmp(lhs, rhs) != 0;
+                break;
+            default:
+                return false;
+                break;
+            }
+        }
+        default:
+            return false;
+            break;
+        }
+    }
+    bool compareSingle(DataType src, CompOp op, AttrType type, int offset, int len, int rhsOffset)
+    {
+        switch (type)
+        {
+        case AttrType::INT:
+        {
+            int *lhs = reinterpret_cast<int *>(src + offset);
+            int *rhs = reinterpret_cast<int *>(src + rhsOffset);
+            switch (op)
+            {
+            case CompOp::E:
+                return *lhs == *rhs;
+                break;
+            case CompOp::L:
+                return *lhs < *rhs;
+                break;
+            case CompOp::LE:
+                return *lhs <= *rhs;
+                break;
+            case CompOp::G:
+                return *lhs > *rhs;
+                break;
+            case CompOp::GE:
+                return *lhs >= *rhs;
+                break;
+            case CompOp::NE:
+                return *lhs != *rhs;
+                break;
 
+            default:
+                return false;
+                break;
+            }
+        }
+        case AttrType::FLOAT:
+        {
+            float *lhs = reinterpret_cast<float *>(src + offset);
+            float *rhs = reinterpret_cast<float *>(src + rhsOffset);
+            switch (op)
+            {
+            case CompOp::E:
+                return *lhs == *rhs;
+                break;
+            case CompOp::L:
+                return *lhs < *rhs;
+                break;
+            case CompOp::LE:
+                return *lhs <= *rhs;
+                break;
+            case CompOp::G:
+                return *lhs > *rhs;
+                break;
+            case CompOp::GE:
+                return *lhs >= *rhs;
+                break;
+            case CompOp::NE:
+                return *lhs != *rhs;
+                break;
+
+            default:
+                return false;
+                break;
+            }
+        }
+        case AttrType::VARCHAR:
+        {
+            char *lhs = src + offset;
+            char *rhs = src + rhsOffset;
+            switch (op)
+            {
+            case CompOp::E:
+                return strcmp(lhs, rhs) == 0;
+                break;
+            case CompOp::NE:
+                return strcmp(lhs, rhs) != 0;
+                break;
             default:
                 return false;
                 break;
@@ -163,8 +284,16 @@ public:
                 if (!flag)
                     return false;
             }
-            else if (!compareSingle(src, cond.op, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.val), cond.attrIdx))
-                return false;
+            else
+            {
+                if (cond.rhsAttr)
+                {
+                    if (!compareSingle(src, cond.op, cond.type, cond.offset, cond.len, cond.rhsOffset))
+                        return false;
+                }
+                else if (!compareSingle(src, cond.op, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.val), cond.attrIdx))
+                    return false;
+            }
         }
         return true;
     }

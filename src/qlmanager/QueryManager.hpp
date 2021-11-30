@@ -102,10 +102,21 @@ public:
                     if (cond.op == CompOp::IN)
                         for (auto val : cond.rhsValues)
                             cc.vals.push_back(val.pData);
-                    else if (cond.op == CompOp::ISNULL || cond.op == CompOp::ISNOTNULL)
-                        cc.offset = idx;
                     else
-                        cc.val = cond.rhsValue.pData;
+                    {
+                        if (cond.bRhsIsAttr == 1)
+                        {
+                            cc.rhsAttr = true;
+                            auto _it = std::find(allAttrName.begin(), allAttrName.end(), cond.rhs.attrName);
+                            auto _idx = std::distance(allAttrName.begin(), _it);
+                            cc.rhsOffset = allOffsets[_idx];
+                        }
+                        else
+                        {
+                            cc.rhsAttr = false;
+                            cc.val = cond.rhsValue.pData;
+                        }
+                    }
                     cc.attrIdx = idx;
                     conds.push_back(cc);
                 }

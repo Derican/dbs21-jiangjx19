@@ -493,10 +493,10 @@ public:
 
         FileScan fs;
         Record rec;
-        char value[100] = "\0";
+        char value[RELNAME_MAX_BYTES] = "\0";
         strcpy(value, tableName.c_str());
         rm->OpenFile(openedDbName + "/relcat", relCatHandle);
-        fs.openScan(relCatHandle, AttrType::VARCHAR, 100, 0, CompOp::E, value);
+        fs.openScan(relCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(RelCat, RelCat::relName), CompOp::E, value);
         RID rid(-1, -1);
         while (fs.getNextRec(rec))
         {

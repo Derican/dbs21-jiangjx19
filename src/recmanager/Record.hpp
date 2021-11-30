@@ -47,9 +47,15 @@ public:
     bool set(const RID &_rid, const DataType &_pData, const int _recSize)
     {
         rid = _rid;
-        recSize = _recSize;
         if (pData == nullptr)
-            pData = new char[recSize];
+            pData = new char[_recSize];
+        else if (_recSize != recSize)
+        {
+            delete[] pData;
+            pData = new char[_recSize];
+        }
+        recSize = _recSize;
+
         memcpy(pData, _pData, recSize);
     }
 };

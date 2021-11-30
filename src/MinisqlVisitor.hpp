@@ -56,6 +56,22 @@ public:
         }
         return val;
     }
+    CompOp getCompOp(SQLParser::OperateContext *ctx)
+    {
+        if (ctx->EqualOrAssign())
+            return CompOp::E;
+        if (ctx->Less())
+            return CompOp::L;
+        if (ctx->LessEqual())
+            return CompOp::LE;
+        if (ctx->Greater())
+            return CompOp::G;
+        if (ctx->GreaterEqual())
+            return CompOp::GE;
+        if (ctx->NotEqual())
+            return CompOp::NE;
+        return CompOp::NO;
+    }
     Condition getCondition(SQLParser::Where_clauseContext *ctx)
     {
         Condition condition;
@@ -106,8 +122,41 @@ public:
         }
         else if (auto where = dynamic_cast<SQLParser::Where_operator_expressionContext *>(ctx))
         {
+            auto column = where->column();
+            if (column->Identifier().size() == 1)
+            {
+                condition.lhs.relName = "";
+                condition.lhs.attrName = column->Identifier(0)->getText();
+            }
+            else
+            {
+                condition.lhs.relName = column->Identifier(0)->getText();
+                condition.lhs.attrName = column->Identifier(1)->getText();
+            }
+            auto operate = where->operate();
+            condition.op = getCompOp(operate);
+            auto expression = where->expression();
+            if (expression->value())
+            {
+                condition.bRhsIsAttr = 0;
+                condition.rhsValue = getValue(expression->value());
+            }
+            else
+            {
+                condition.bRhsIsAttr = 1;
+                if (expression->column()->Identifier().size() == 1)
+                {
+                    condition.rhs.relName = "";
+                    condition.rhs.attrName = expression->column()->Identifier(0)->getText();
+                }
+                else
+                {
+                    condition.rhs.relName = expression->column()->Identifier(0)->getText();
+                    condition.rhs.attrName = expression->column()->Identifier(1)->getText();
+                }
+            }
         }
-        else if (auto where = dynamic_cast<SQLParser::Where_in_listContext *>(ctx))
+        else if (auto where = dynamic_cast<SQLParser::Where_operator_selectContext *>(ctx))
         {
         }
         return condition;
