@@ -46,7 +46,6 @@ struct AttrCat
     int offset;
     AttrType type;
     int typeLen;
-    int indexNo;
     int nullable;
     int defaultValid;
     defaultValue defaultVal;

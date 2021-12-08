@@ -260,6 +260,8 @@ public:
             {
                 if (primary->Identifier())
                     prims.relName = primary->Identifier()->getText();
+                else
+                    prims.relName = tableName;
                 for (auto ident : primary->identifiers()->Identifier())
                 {
                     std::string p_name = ident->getText();
@@ -289,7 +291,12 @@ public:
                 }
             }
         }
-        sm->createTable(tableName, attrs);
+        if (sm->createTable(tableName, attrs))
+        {
+            if (prims.keys.size() > 0)
+                sm->createIndex(prims.relName, prims.keys, true);
+        }
+
         antlrcpp::Any res;
         return res;
     }

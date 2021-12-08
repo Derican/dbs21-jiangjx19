@@ -16,11 +16,12 @@ private:
     int openedID;
 
 public:
-    IndexManager() {}
+    IndexManager() { openedID = -1; }
     IndexManager(FileManager *_fm, BufPageManager *_bpm)
     {
         fm = _fm;
         bpm = _bpm;
+        openedID = -1;
     }
     ~IndexManager()
     {
@@ -28,9 +29,11 @@ public:
         bpm = nullptr;
     }
 
-    bool createIndex(const std::string filename, int indexNo, AttrType attrType, int attrLength)
+    bool createIndex(const std::string filename, std::vector<int> &indexNo, AttrType attrType, int attrLength)
     {
-        string fn_ix = filename + '.' + to_string(indexNo);
+        string fn_ix = filename;
+        for (auto in : indexNo)
+            fn_ix += '.' + to_string(in);
         fm->createFile(fn_ix.c_str());
         int fileID;
         fm->openFile(fn_ix.c_str(), fileID);
@@ -40,29 +43,37 @@ public:
         DataType d = reinterpret_cast<DataType>(b);
         IndexHeader ih;
         ih.numPages = 1;
-        if (attrType == AttrType::INT)
-            ih.pairSize = 4 + sizeof(RID);
-        else
+        if (attrType != AttrType::INT)
+        {
+            std::cout << "Not support for non-int index." << std::endl;
             return false;
+        }
         ih.rootPage = -1;
         ih.height = 0;
         ih.type = attrType;
-        ih.typeLen = attrLength;
+        ih.num_attrs = attrLength / 4;
         memcpy(d, &ih, sizeof(IndexHeader));
         bpm->markDirty(index);
+        bpm->writeBack(index);
         return true;
     }
 
-    bool destroyIndex(const std::string filename, int indexNo)
+    bool destroyIndex(const std::string filename, std::vector<int> &indexNo)
     {
-        string fn_ix = filename + '.' + to_string(indexNo);
+        string fn_ix = filename;
+        for (auto in : indexNo)
+            fn_ix += '.' + to_string(in);
+        remove(fn_ix.c_str());
+        return true;
     }
 
-    bool openIndex(const std::string filename, int indexNo, IndexHandle &indexHandle)
+    bool openIndex(const std::string filename, std::vector<int> &indexNo, IndexHandle &indexHandle)
     {
         if (openedID >= 0)
             return false;
-        string fn_ix = filename + '.' + to_string(indexNo);
+        string fn_ix = filename;
+        for (auto in : indexNo)
+            fn_ix += '.' + to_string(in);
         int fileID;
         fm->openFile(fn_ix.c_str(), fileID);
         openedID = fileID;
@@ -70,10 +81,11 @@ public:
         return true;
     }
 
-    bool closeIndex(IndexHandle &indexHandle)
+    bool closeIndex(const std::string filename, std::vector<int> &indexNo)
     {
         if (openedID < 0)
             return false;
+        bpm->close();
         fm->closeFile(openedID);
         openedID = -1;
         return true;

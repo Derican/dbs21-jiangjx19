@@ -28,7 +28,7 @@ This is a pilot project developing mysql-like databases based on the parser offe
 * run
   
   ```sh
-  cd build/src/
+  cd run
   ./minisql
   ```
 
@@ -108,3 +108,13 @@ If the CMake variable 'ANTLR4_INSTALL' is set, CMake Packages will be build and 
 They expose two packages: antlr4_runtime and antlr4_generator which can be referenced to ease up the use of the
 ANTLR Generator and runtime.
 Use and Sample can be found [here](cmake/Antlr4Package.md)
+
+# Project Framework Support
+
+This project is based on RedBase.
+
+# Index BPlusTree Support
+
+The BPlusTree in the Index Manager is based on the following work:
+
+- https://github.com/srijanshetty/BPlusTree/blob/master/bplus.cpp

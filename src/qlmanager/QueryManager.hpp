@@ -2,6 +2,7 @@
 
 #include "../recmanager/RecordManager.hpp"
 #include "../ixmanager/IndexManager.hpp"
+#include "../ixmanager/IndexScan.hpp"
 #include "../sysmanager/SystemManager.hpp"
 #include "constants.h"
 #include <string>
@@ -73,6 +74,7 @@ public:
                     typeLens.push_back(typeLen);
                 }
             }
+
             // get value
             FileHandle fh;
             rm->OpenFile(sm->openedDbName + "/" + tableName, fh);
@@ -120,11 +122,79 @@ public:
                     conds.push_back(cc);
                 }
 
-                fs.openScan(fh, conds);
-                Record rec;
-                while (fs.getNextRec(rec))
-                    results.push_back(rec);
-                fs.closeScan();
+                // check primary key and index
+                std::vector<std::vector<int>> indexNo;
+                std::vector<int> used_indexNo;
+                sm->getPrimaryKeyAndIndex(tableName, indexNo);
+                bool use_indexNo = false;
+                CompOp used_op = CompOp::NO;
+                std::vector<int> used_keys;
+                if (indexNo.size() > 0)
+                {
+                    for (auto index : indexNo)
+                    {
+                        bool use_index = true;
+                        CompOp tmp_op = CompOp::NO;
+                        std::vector<int> tmp_keys;
+                        if (index.size() != conds.size())
+                            continue;
+                        for (auto ind : index)
+                        {
+                            bool flag = false;
+                            for (auto cond : conds)
+                            {
+                                if (cond.offset == ind)
+                                {
+                                    if (tmp_op == CompOp::NO)
+                                        tmp_op = cond.op;
+                                    if (tmp_op <= 4 && tmp_op == cond.op)
+                                    {
+                                        flag = true;
+                                        tmp_keys.push_back(cond.val.Int);
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!flag)
+                            {
+                                use_index = false;
+                                break;
+                            }
+                        }
+                        if (use_index && index.size() > used_indexNo.size())
+                        {
+                            use_indexNo = true;
+                            used_indexNo = index;
+                            used_op = tmp_op;
+                            used_keys = tmp_keys;
+                        }
+                    }
+                }
+
+                if (use_indexNo)
+                {
+                    IndexHandle ih;
+                    IndexScan is;
+                    im->openIndex(sm->openedDbName + "/" + tableName, used_indexNo, ih);
+                    is.openScan(ih, used_op, used_keys);
+                    RID rid;
+                    Record rec;
+                    while (is.getNextEntry(rid))
+                    {
+                        fh.getRec(rid, rec);
+                        results.push_back(rec);
+                    }
+                    is.closeScan();
+                    im->closeIndex(sm->openedDbName + "/" + tableName, used_indexNo);
+                }
+                else
+                {
+                    fs.openScan(fh, conds);
+                    Record rec;
+                    while (fs.getNextRec(rec))
+                        results.push_back(rec);
+                    fs.closeScan();
+                }
             }
 
             // print
@@ -206,10 +276,104 @@ public:
         }
 
         FileHandle fh;
+        FileScan fs;
+        IndexHandle ih;
+        IndexScan is;
+        RID rid(-1, -1);
+        // check primary key
+        std::vector<int> primayKey;
+        sm->getPrimaryKey(tableName, primayKey);
+        if (primayKey.size() > 0)
+        {
+            std::vector<int> keys;
+            for (auto off : primayKey)
+            {
+                int tmp;
+                memcpy(&tmp, newData + off, 4);
+                keys.push_back(tmp);
+            }
+            im->openIndex(sm->openedDbName + "/" + tableName, primayKey, ih);
+            is.openScan(ih, CompOp::E, keys);
+            while (is.getNextEntry(rid))
+            {
+                break;
+            }
+            is.closeScan();
+
+            if (rid.valid())
+            {
+                std::cout << "Duplicate primary key." << std::endl;
+                im->closeIndex(sm->openedDbName + "/" + tableName, primayKey);
+                return false;
+            }
+            im->closeIndex(sm->openedDbName + "/" + tableName, primayKey);
+        }
+
+        // check all indexes
+        std::vector<std::vector<int>> indexNo;
+        sm->getAllIndex(tableName, indexNo);
+        if (indexNo.size() > 0)
+        {
+            for (auto index : indexNo)
+            {
+                std::vector<int> keys;
+                for (auto off : index)
+                {
+                    int tmp;
+                    memcpy(&tmp, newData + off, 4);
+                    keys.push_back(tmp);
+                }
+                im->openIndex(sm->openedDbName + "/" + tableName, index, ih);
+                is.openScan(ih, CompOp::E, keys);
+                while (is.getNextEntry(rid))
+                {
+                    break;
+                }
+                is.closeScan();
+
+                if (rid.valid())
+                {
+                    std::cout << "Duplicate index." << std::endl;
+                    im->closeIndex(sm->openedDbName + "/" + tableName, index);
+                    return false;
+                }
+                im->closeIndex(sm->openedDbName + "/" + tableName, index);
+            }
+        }
+
+        // finally insert
         rm->OpenFile(sm->openedDbName + "/" + tableName, fh);
-        RID rid;
         fh.insertRec(newData, rid);
         rm->CloseFile(sm->openedDbName + "/" + tableName);
+        if (primayKey.size() > 0)
+        {
+            std::vector<int> keys;
+            for (auto off : primayKey)
+            {
+                int tmp;
+                memcpy(&tmp, newData + off, 4);
+                keys.push_back(tmp);
+            }
+            im->openIndex(sm->openedDbName + "/" + tableName, primayKey, ih);
+            ih.insertEntry(keys, rid);
+            im->closeIndex(sm->openedDbName + "/" + tableName, primayKey);
+        }
+        if (indexNo.size() > 0)
+        {
+            for (auto index : indexNo)
+            {
+                std::vector<int> keys;
+                for (auto off : index)
+                {
+                    int tmp;
+                    memcpy(&tmp, newData + off, 4);
+                    keys.push_back(tmp);
+                }
+                im->openIndex(sm->openedDbName + "/" + tableName, index, ih);
+                ih.insertEntry(keys, rid);
+                im->closeIndex(sm->openedDbName + "/" + tableName, index);
+            }
+        }
         delete[] newData;
         return true;
     }

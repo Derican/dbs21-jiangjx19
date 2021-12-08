@@ -138,13 +138,33 @@ public:
             std::cout << "No database used." << std::endl;
             return false;
         }
+
+        FileScan scan;
+        Record rec;
+        char value[RELNAME_MAX_BYTES] = "\0";
+        strcpy(value, tableName.c_str());
+        rm->OpenFile(openedDbName + "/relcat", relCatHandle);
+        scan.openScan(relCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(RelCat, RelCat::relName), CompOp::E, value);
+        RID rid(-1, -1);
+        while (scan.getNextRec(rec))
+        {
+            rec.getRID(rid);
+        }
+        scan.closeScan();
+        rm->CloseFile(openedDbName + "/relcat");
+
+        if (rid.valid())
+        {
+            std::cout << "Table " << tableName << " already exists." << std::endl;
+            return false;
+        }
+
         if (attributes.size() <= 0)
         {
             std::cout << "Table must contain at least one column." << std::endl;
             return false;
         }
         int offset = (attributes.size() - 1) / 8 + 1;
-        RID rid;
         AttrCat attrCat;
         strcpy(attrCat.relName, tableName.c_str());
         rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
@@ -152,7 +172,6 @@ public:
         {
             attrCat.type = info.attrType;
             attrCat.typeLen = info.attrLength;
-            attrCat.indexNo = -1;
             attrCat.offset = offset;
             strcpy(attrCat.attrName, info.attrName.c_str());
             attrCat.nullable = info.nullable;
@@ -161,7 +180,7 @@ public:
             offset += info.attrLength;
             attrCatHandle.insertRec(reinterpret_cast<DataType>(&attrCat), rid);
         }
-        rm->CloseFile("attrcat");
+        rm->CloseFile(openedDbName + "/attrcat");
 
         rm->CreateFile(openedDbName + "/" + tableName, offset);
 
@@ -173,6 +192,8 @@ public:
         rm->OpenFile(openedDbName + "/relcat", relCatHandle);
         relCatHandle.insertRec(reinterpret_cast<DataType>(&relCat), rid);
         rm->CloseFile(openedDbName + "/relcat");
+
+        rm->CreateFile(openedDbName + "/" + tableName + ".index", 4 + 4 * relCat.attrCount);
         return true;
     }
     bool dropTable(const std::string tableName)
@@ -184,14 +205,14 @@ public:
         }
         FileScan scan;
         Record rec;
-        char value[100] = "\0";
+        char value[RELNAME_MAX_BYTES] = "\0";
         strcpy(value, tableName.c_str());
         rm->OpenFile(openedDbName + "/relcat", relCatHandle);
-        scan.openScan(relCatHandle, AttrType::VARCHAR, 100, 0, CompOp::E, value);
+        scan.openScan(relCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(RelCat, RelCat::relName), CompOp::E, value);
         RID rid(-1, -1);
         while (scan.getNextRec(rec))
         {
-            rm->DestroyFile(tableName);
+            rm->DestroyFile(openedDbName + "/" + tableName);
             rec.getRID(rid);
             relCatHandle.deleteRec(rid);
         }
@@ -204,6 +225,8 @@ public:
             return false;
         }
 
+        std::vector<std::string> attributes;
+        std::vector<int> offsets;
         rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
         scan.openScan(attrCatHandle, AttrType::VARCHAR, 100, 0, CompOp::E, value);
         while (scan.getNextRec(rec))
@@ -211,8 +234,8 @@ public:
             DataType tmp;
             rec.getData(tmp);
             AttrCat *cat = reinterpret_cast<AttrCat *>(tmp);
-            if (cat->indexNo >= 0)
-                dropIndex(tableName, cat->attrName);
+            attributes.push_back(cat->attrName);
+            offsets.push_back(cat->offset);
             RID rid;
             rec.getRID(rid);
             attrCatHandle.deleteRec(rid);
@@ -220,42 +243,120 @@ public:
         scan.closeScan();
         rm->CloseFile(openedDbName + "/attrcat");
 
+        FileHandle hd;
+        rm->OpenFile(openedDbName + "/" + tableName + ".index", hd);
+        scan.openScan(hd, AttrType::ANY, 4, 0, CompOp::NO, nullptr);
+        while (scan.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            int *vec = reinterpret_cast<int *>(tmp + 4);
+            int i = 0;
+            std::vector<string> attrName;
+            while (vec[i] >= 0)
+            {
+                auto it = std::find(offsets.begin(), offsets.end(), vec[i]);
+                auto idx = std::distance(offsets.begin(), it);
+                attrName.push_back(attributes[idx]);
+                i++;
+            }
+            dropIndex(tableName, attrName);
+        }
+        scan.closeScan();
+        rm->CloseFile(openedDbName + "/" + tableName + ".index");
+        rm->DestroyFile(openedDbName + "/" + tableName + ".index");
         return true;
     }
-    bool createIndex(const std::string tableName, const std::string attrName)
+    bool createIndex(const std::string tableName, const std::vector<std::string> &attrName, bool isPrimary)
     {
+        if (!dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
+
         FileScan scan;
         Record rec;
-        char value[100] = "\0";
+        char value[RELNAME_MAX_BYTES] = "\0";
         strcpy(value, tableName.c_str());
 
-        rm->OpenFile("attrcat", attrCatHandle);
-        scan.openScan(attrCatHandle, AttrType::VARCHAR, 100, 0, CompOp::E, value);
+        std::vector<std::string> attributes;
+        std::vector<int> offsets;
+        std::vector<int> indexNo;
+        rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
+        scan.openScan(attrCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(AttrCat, AttrCat::relName), CompOp::E, value);
         AttrCat *cat = nullptr;
         while (scan.getNextRec(rec))
         {
             DataType tmp;
             rec.getData(tmp);
             cat = reinterpret_cast<AttrCat *>(tmp);
-            if (strcmp(cat->attrName, attrName.c_str()) == 0)
-            {
-                if (cat->indexNo >= 0)
-                    return false;
-                cat->indexNo = cat->offset;
-                im->createIndex(tableName, cat->indexNo, cat->type, cat->typeLen);
-                break;
-            }
+            attributes.push_back(cat->attrName);
+            offsets.push_back(cat->offset);
         }
         scan.closeScan();
-        rm->CloseFile("attrcat");
+        rm->CloseFile(openedDbName + "/attrcat");
 
         if (cat == nullptr)
+        {
+            std::cout << "Table " << tableName << " not exists." << std::endl;
             return false;
+        }
+        for (auto name : attrName)
+        {
+            auto it = std::find(attributes.begin(), attributes.end(), name);
+            auto idx = std::distance(attributes.begin(), it);
+            indexNo.push_back(offsets[idx]);
+        }
+
+        int *data = new int[attributes.size() + 1];
+        memset(data, 0, 4 * (attributes.size() + 1));
+        data[0] = isPrimary ? 1 : 0;
+        for (auto i = 0; i < attributes.size(); i++)
+        {
+            if (i < indexNo.size())
+                data[i + 1] = indexNo[i];
+            else
+                data[i + 1] = -1;
+        }
+        FileHandle hd;
+        rm->OpenFile(openedDbName + "/" + tableName + ".index", hd);
+        RID r(-1, -1);
+        scan.openScan(hd, AttrType::ANY, 4, 0, CompOp::NO, nullptr);
+        bool primaryExisted = false;
+        int primary = 1;
+        while (scan.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            if (memcmp(data, tmp + 4, 4 * attributes.size()) == 0)
+                rec.getRID(r);
+            if (memcmp(&primary, tmp, 4) == 0)
+                primaryExisted = true;
+        }
+        scan.closeScan();
+        if (isPrimary && primaryExisted)
+        {
+            std::cout << "Primary Key already exists." << std::endl;
+            rm->CloseFile(openedDbName + "/" + tableName + ".index");
+            return false;
+        }
+        if (r.valid())
+        {
+            std::cout << "Index already exists." << std::endl;
+            rm->CloseFile(openedDbName + "/" + tableName + ".index");
+            return false;
+        }
+        hd.insertRec(reinterpret_cast<DataType>(data), r);
+        rm->CloseFile(openedDbName + "/" + tableName + ".index");
+        delete[] data;
+
         // here we open two files at one time
+        im->createIndex(openedDbName + "/" + tableName, indexNo, AttrType::INT, 4 * indexNo.size());
         IndexHandle ih;
-        im->openIndex(tableName, cat->indexNo, ih);
+        im->openIndex(openedDbName + "/" + tableName, indexNo, ih);
         FileHandle fh;
-        rm->OpenFile(tableName, fh);
+        rm->OpenFile(openedDbName + "/" + tableName, fh);
         scan.openScan(fh, cat->type, cat->typeLen, cat->offset, CompOp::NO, nullptr);
         while (scan.getNextRec(rec))
         {
@@ -263,44 +364,93 @@ public:
             rec.getData(tmp);
             RID rid;
             rec.getRID(rid);
-            ih.insertEntry(tmp + cat->offset, rid);
+            std::vector<int> key;
+            for (auto offset : offsets)
+            {
+                int *i = reinterpret_cast<int *>(tmp + offset);
+                key.push_back(*i);
+            }
+            ih.insertEntry(key, rid);
         }
         scan.closeScan();
-        rm->CloseFile(tableName);
-        im->closeIndex(ih);
+        rm->CloseFile(openedDbName + "/" + tableName);
+        im->closeIndex(openedDbName + "/" + tableName, indexNo);
         return true;
     }
-    bool dropIndex(const std::string tableName, const std::string attrName)
+    bool dropIndex(const std::string tableName, const std::vector<std::string> &attrName)
     {
+        if (!dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
+
         FileScan scan;
         Record rec;
-        char value[100] = "\0";
+        char value[RELNAME_MAX_BYTES] = "\0";
         strcpy(value, tableName.c_str());
 
-        rm->OpenFile("attrcat", attrCatHandle);
-        scan.openScan(attrCatHandle, AttrType::VARCHAR, 100, 0, CompOp::E, value);
+        std::vector<std::string> attributes;
+        std::vector<int> offsets;
+        std::vector<int> indexNo;
+        rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
+        scan.openScan(attrCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(AttrCat, AttrCat::relName), CompOp::E, value);
         AttrCat *cat = nullptr;
         while (scan.getNextRec(rec))
         {
             DataType tmp;
             rec.getData(tmp);
             cat = reinterpret_cast<AttrCat *>(tmp);
-            if (strcmp(cat->attrName, attrName.c_str()) == 0)
-            {
-                if (cat->indexNo < 0)
-                    return false;
-                break;
-            }
+            attributes.push_back(cat->attrName);
+            offsets.push_back(cat->offset);
         }
         scan.closeScan();
-        rm->CloseFile("attrcat");
+        rm->CloseFile(openedDbName + "/attrcat");
 
-        im->destroyIndex(tableName, cat->indexNo);
-        cat->indexNo = -1;
-        RID rid;
-        rec.getRID(rid);
-        Record newRec(rid, reinterpret_cast<DataType>(cat), sizeof(AttrCat));
-        attrCatHandle.updateRec(newRec);
+        if (cat == nullptr)
+        {
+            std::cout << "Table " << tableName << " not exists." << std::endl;
+            return false;
+        }
+        for (auto name : attrName)
+        {
+            auto it = std::find(attributes.begin(), attributes.end(), name);
+            auto idx = std::distance(attributes.begin(), it);
+            indexNo.push_back(offsets[idx]);
+        }
+
+        int *data = new int[attributes.size()];
+        memset(data, 0, 4 * attributes.size());
+        for (auto i = 0; i < attributes.size(); i++)
+        {
+            if (i < indexNo.size())
+                data[i] = indexNo[i];
+            else
+                data[i] = -1;
+        }
+        FileHandle hd;
+        rm->OpenFile(openedDbName + "/" + tableName + ".index", hd);
+        RID r(-1, -1);
+        scan.openScan(hd, AttrType::ANY, 4, 0, CompOp::NO, nullptr);
+        while (scan.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            if (memcmp(data, tmp + 4, 4 * attributes.size()) == 0)
+                rec.getRID(r);
+        }
+        scan.closeScan();
+        if (!r.valid())
+        {
+            std::cout << "Index not exists." << std::endl;
+            rm->CloseFile(openedDbName + "/" + tableName + ".index");
+            return false;
+        }
+        hd.deleteRec(r);
+        rm->CloseFile(openedDbName + "/" + tableName + ".index");
+
+        delete[] data;
+        im->destroyIndex(tableName, indexNo);
         return true;
     }
     bool getAllAttr(const std::string &tableName, std::vector<std::string> &attrName, std::vector<int> &offsets, std::vector<AttrType> &types, std::vector<int> &typeLens)
@@ -405,7 +555,7 @@ public:
         char value[RELNAME_MAX_BYTES] = "\0";
         strcpy(value, tableName.c_str());
 
-        rm->OpenFile("attrcat", attrCatHandle);
+        rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
         scan.openScan(attrCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(AttrCat, AttrCat::relName), CompOp::E, value);
         AttrCat *cat = nullptr;
         while (scan.getNextRec(rec))
@@ -422,7 +572,7 @@ public:
             }
         }
         scan.closeScan();
-        rm->CloseFile("attrcat");
+        rm->CloseFile(openedDbName + "/attrcat");
 
         if (cat)
             return true;
@@ -511,6 +661,8 @@ public:
             return false;
         }
 
+        std::vector<std::string> attributes;
+        std::vector<int> offsets;
         std::cout << "+---------------+--------------+------+---------+" << std::endl
                   << "|     Field     |     Type     | Null | Default |" << std::endl
                   << "+---------------+--------------+------+---------+" << std::endl;
@@ -523,10 +675,58 @@ public:
             rec.getData(tmp);
             memcpy(&attrcat, tmp, sizeof(AttrCat));
             std::cout << attrcat << std::endl;
+            attributes.push_back(attrcat.attrName);
+            offsets.push_back(attrcat.offset);
         }
         std::cout << "+---------------+--------------+------+---------+" << std::endl;
         fs.closeScan();
         rm->CloseFile(openedDbName + "/attrcat");
+
+        int *indexNo = new int[attributes.size()];
+        FileHandle hd;
+        rm->OpenFile(openedDbName + "/" + tableName + ".index", hd);
+        int primary = 1;
+        fs.openScan(hd, AttrType::INT, 4, 0, CompOp::E, &primary);
+        while (fs.getNextRec(rec))
+        {
+            std::cout << "PRIMARY KEY (";
+            DataType tmp;
+            rec.getData(tmp);
+            memcpy(indexNo, tmp + 4, 4 * attributes.size());
+            int i = 0;
+            while (indexNo[i] >= 0 && i < attributes.size())
+            {
+                if (i > 0)
+                    std::cout << ", ";
+                auto it = std::find(offsets.begin(), offsets.end(), indexNo[i]);
+                auto idx = std::distance(offsets.begin(), it);
+                std::cout << attributes[idx];
+                i++;
+            }
+            std::cout << ")" << std::endl;
+        }
+        fs.closeScan();
+
+        primary = 0;
+        fs.openScan(hd, AttrType::INT, 4, 0, CompOp::E, &primary);
+        while (fs.getNextRec(rec))
+        {
+            std::cout << "INDEX (";
+            DataType tmp;
+            rec.getData(tmp);
+            memcpy(indexNo, tmp + 4, 4 * attributes.size());
+            int i = 0;
+            while (indexNo[i] >= 0)
+            {
+                if (i > 0)
+                    std::cout << ", ";
+                auto it = std::find(offsets.begin(), offsets.end(), indexNo[i]);
+                auto idx = std::distance(offsets.begin(), it);
+                std::cout << attributes[i];
+            }
+            std::cout << ")" << std::endl;
+        }
+        fs.closeScan();
         return true;
     }
     bool checkTableExists(const std::string &tableName)
@@ -549,5 +749,164 @@ public:
         scan.closeScan();
         rm->CloseFile(openedDbName + "/relcat");
         return false;
+    }
+    bool getPrimaryKey(const std::string &tableName, std::vector<int> &indexNo)
+    {
+        indexNo.clear();
+        int attrCount;
+
+        if (!dbOpened)
+            return false;
+        FileScan scan;
+        Record rec;
+        char value[RELNAME_MAX_BYTES] = "\0";
+        strcpy(value, tableName.c_str());
+        rm->OpenFile(openedDbName + "/relcat", relCatHandle);
+        scan.openScan(relCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(RelCat, RelCat::relName), CompOp::E, value);
+        RID rid(-1, -1);
+        while (scan.getNextRec(rec))
+        {
+            rec.getRID(rid);
+            DataType tmp;
+            rec.getData(tmp);
+            RelCat cat;
+            memcpy(&cat, tmp, sizeof(RelCat));
+            attrCount = cat.attrCount;
+        }
+        scan.closeScan();
+        rm->CloseFile(openedDbName + "/relcat");
+
+        if (!rid.valid())
+            return false;
+
+        FileHandle hd;
+        rm->OpenFile(openedDbName + "/" + tableName + ".index", hd);
+        int primary = 1;
+        scan.openScan(hd, AttrType::INT, 4, 0, CompOp::E, &primary);
+        while (scan.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            int *ind = new int[attrCount];
+            memcpy(ind, tmp + 4, 4 * attrCount);
+            for (auto i = 0; i < attrCount; i++)
+            {
+                if (ind[i] >= 0)
+                    indexNo.push_back(ind[i]);
+                else
+                    break;
+            }
+            delete[] ind;
+        }
+        scan.closeScan();
+        rm->CloseFile(openedDbName + "/" + tableName + ".index");
+        return true;
+    }
+    bool getAllIndex(const std::string &tableName, std::vector<std::vector<int>> &indexNo)
+    {
+        indexNo.clear();
+        int attrCount;
+
+        if (!dbOpened)
+            return false;
+        FileScan scan;
+        Record rec;
+        char value[RELNAME_MAX_BYTES] = "\0";
+        strcpy(value, tableName.c_str());
+        rm->OpenFile(openedDbName + "/relcat", relCatHandle);
+        scan.openScan(relCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(RelCat, RelCat::relName), CompOp::E, value);
+        RID rid(-1, -1);
+        while (scan.getNextRec(rec))
+        {
+            rec.getRID(rid);
+            DataType tmp;
+            rec.getData(tmp);
+            RelCat cat;
+            memcpy(&cat, tmp, sizeof(RelCat));
+            attrCount = cat.attrCount;
+        }
+        scan.closeScan();
+        rm->CloseFile(openedDbName + "/relcat");
+
+        if (!rid.valid())
+            return false;
+
+        FileHandle hd;
+        rm->OpenFile(openedDbName + "/" + tableName + ".index", hd);
+        int primary = 0;
+        scan.openScan(hd, AttrType::INT, 4, 0, CompOp::E, &primary);
+        while (scan.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            int *ind = new int[attrCount];
+            memcpy(ind, tmp + 4, 4 * attrCount);
+            std::vector<int> inde;
+            for (auto i = 0; i < attrCount; i++)
+            {
+                if (ind[i] >= 0)
+                    inde.push_back(ind[i]);
+                else
+                    break;
+            }
+            indexNo.push_back(inde);
+            delete[] ind;
+        }
+        scan.closeScan();
+        rm->CloseFile(openedDbName + "/" + tableName + ".index");
+        return true;
+    }
+    bool getPrimaryKeyAndIndex(const std::string &tableName, std::vector<std::vector<int>> &indexNo)
+    {
+        indexNo.clear();
+        int attrCount;
+
+        if (!dbOpened)
+            return false;
+        FileScan scan;
+        Record rec;
+        char value[RELNAME_MAX_BYTES] = "\0";
+        strcpy(value, tableName.c_str());
+        rm->OpenFile(openedDbName + "/relcat", relCatHandle);
+        scan.openScan(relCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(RelCat, RelCat::relName), CompOp::E, value);
+        RID rid(-1, -1);
+        while (scan.getNextRec(rec))
+        {
+            rec.getRID(rid);
+            DataType tmp;
+            rec.getData(tmp);
+            RelCat cat;
+            memcpy(&cat, tmp, sizeof(RelCat));
+            attrCount = cat.attrCount;
+        }
+        scan.closeScan();
+        rm->CloseFile(openedDbName + "/relcat");
+
+        if (!rid.valid())
+            return false;
+
+        FileHandle hd;
+        rm->OpenFile(openedDbName + "/" + tableName + ".index", hd);
+        scan.openScan(hd, AttrType::INT, 4, 0, CompOp::NO, nullptr);
+        while (scan.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            int *ind = new int[attrCount];
+            memcpy(ind, tmp + 4, 4 * attrCount);
+            std::vector<int> inde;
+            for (auto i = 0; i < attrCount; i++)
+            {
+                if (ind[i] >= 0)
+                    inde.push_back(ind[i]);
+                else
+                    break;
+            }
+            indexNo.push_back(inde);
+            delete[] ind;
+        }
+        scan.closeScan();
+        rm->CloseFile(openedDbName + "/" + tableName + ".index");
+        return true;
     }
 };

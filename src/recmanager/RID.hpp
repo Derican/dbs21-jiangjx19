@@ -37,4 +37,8 @@ public:
     {
         return pageID >= 0 && slotID >= 0;
     }
+    bool equals(const RID &r)
+    {
+        return pageID == r.pageID && slotID == r.slotID;
+    }
 };

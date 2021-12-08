@@ -2,6 +2,7 @@
 
 #include <memory.h>
 #include <string>
+#include <map>
 #include "constants.h"
 #include "FileHandle.hpp"
 #include "../fileio/FileManager.h"
@@ -12,7 +13,7 @@ class RecordManager
 private:
     FileManager *fm;
     BufPageManager *bpm;
-    int openedID;
+    std::map<std::string, int> openedMap;
 
 public:
     RecordManager() {}
@@ -20,7 +21,6 @@ public:
     {
         fm = _fm;
         bpm = _bpm;
-        openedID = -1;
     }
     ~RecordManager()
     {
@@ -51,25 +51,28 @@ public:
     }
     bool DestroyFile(const std::string filename)
     {
+        remove(filename.c_str());
         return true;
     }
     bool OpenFile(const std::string filename, FileHandle &fileHandle)
     {
-        if (openedID >= 0)
+        auto it = openedMap.find(filename);
+        if (it != openedMap.end())
             return false;
         int fileID;
         fm->openFile(filename.c_str(), fileID);
-        openedID = fileID;
+        openedMap[filename] = fileID;
         fileHandle = FileHandle(fileID, bpm);
         return true;
     }
     bool CloseFile(const std::string filename)
     {
-        if (openedID < 0)
+        auto it = openedMap.find(filename);
+        if (it == openedMap.end())
             return false;
         bpm->close();
-        fm->closeFile(openedID);
-        openedID = -1;
+        fm->closeFile(it->second);
+        openedMap.erase(it);
         return true;
     }
 };
