@@ -43,6 +43,7 @@ public:
                 index = left;
                 return true;
             }
+            left++;
         }
         index = -1;
         return false;
@@ -50,7 +51,7 @@ public:
 
     bool searchKeyLowerBound(const std::vector<int> &e, int &index)
     {
-        if (keys.size() <= 0 || keyCompare(e, keys[0]) == 1)
+        if (keys.size() <= 0)
         {
             index = 0;
             return false;
@@ -58,7 +59,7 @@ public:
         int left = 0;
         while (left < keys.size())
         {
-            if (keyCompare(e, keys[left]) <= 0)
+            if (keyCompare(keys[left], e) <= 0)
             {
                 index = left;
                 return keyCompare(keys[index], e) == 0;
@@ -70,6 +71,27 @@ public:
     }
 
     bool searchKeyUpperBound(const std::vector<int> &e, int &index)
+    {
+        if (keys.size() <= 0)
+        {
+            index = 0;
+            return false;
+        }
+        int left = 0;
+        while (left < keys.size())
+        {
+            if (keyCompare(keys[left], e) == -1)
+            {
+                index = left;
+                return keyCompare(keys[index], e) == 0;
+            }
+            left++;
+        }
+        index = left;
+        return false;
+    }
+
+    bool searchChild(const std::vector<int> &e, int &index)
     {
         if (keys.size() <= 0 || keyCompare(e, keys[0]) == 1)
         {
@@ -117,7 +139,7 @@ public:
     {
         int l_index, r_index;
         bool found = searchKeyLowerBound(e, l_index);
-        found = searchKeyUpperBound(e, r_index);
+        searchKeyUpperBound(e, r_index);
         if (!found)
         {
             std::cout << "Non-existed key deleted." << std::endl;

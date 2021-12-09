@@ -50,6 +50,28 @@ public:
         default:
             break;
         }
+
+        if (pageID > 0 && this->op == CompOp::G)
+        {
+            TreeNode *tmp = new TreeNode();
+            handle.loadTreeNode(pageID, tmp);
+            while (tmp->keyCompare(tmp->keys[slotID], keys) != -1)
+            {
+                slotID++;
+                if (slotID == tmp->keys.size())
+                {
+                    pageID = tmp->header.rightSibling;
+                    slotID = 0;
+                    delete tmp;
+                    tmp = new TreeNode();
+                    if (pageID > 0)
+                        handle.loadTreeNode(pageID, tmp);
+                    else
+                        break;
+                }
+            }
+            delete tmp;
+        }
     }
 
     bool getNextEntry(RID &rid)

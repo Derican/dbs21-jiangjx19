@@ -203,6 +203,8 @@ public:
             std::cout << "No database used." << std::endl;
             return false;
         }
+
+        // check relcat
         FileScan scan;
         Record rec;
         char value[RELNAME_MAX_BYTES] = "\0";
@@ -210,11 +212,12 @@ public:
         rm->OpenFile(openedDbName + "/relcat", relCatHandle);
         scan.openScan(relCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(RelCat, RelCat::relName), CompOp::E, value);
         RID rid(-1, -1);
+        RID relCatRID;
+        std::vector<RID> attrCatRIDs;
         while (scan.getNextRec(rec))
         {
             rm->DestroyFile(openedDbName + "/" + tableName);
             rec.getRID(rid);
-            relCatHandle.deleteRec(rid);
         }
         scan.closeScan();
         rm->CloseFile(openedDbName + "/relcat");
@@ -225,6 +228,9 @@ public:
             return false;
         }
 
+        relCatRID = rid;
+
+        // check attrcat
         std::vector<std::string> attributes;
         std::vector<int> offsets;
         rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
@@ -238,12 +244,14 @@ public:
             offsets.push_back(cat->offset);
             RID rid;
             rec.getRID(rid);
-            attrCatHandle.deleteRec(rid);
+            attrCatRIDs.push_back(rid);
         }
         scan.closeScan();
         rm->CloseFile(openedDbName + "/attrcat");
 
+        // check indexes
         FileHandle hd;
+        std::vector<std::vector<std::string>> attrNames;
         rm->OpenFile(openedDbName + "/" + tableName + ".index", hd);
         scan.openScan(hd, AttrType::ANY, 4, 0, CompOp::NO, nullptr);
         while (scan.getNextRec(rec))
@@ -253,18 +261,33 @@ public:
             int *vec = reinterpret_cast<int *>(tmp + 4);
             int i = 0;
             std::vector<string> attrName;
-            while (vec[i] >= 0)
+            while (vec[i] >= 0 && i < attributes.size())
             {
                 auto it = std::find(offsets.begin(), offsets.end(), vec[i]);
                 auto idx = std::distance(offsets.begin(), it);
                 attrName.push_back(attributes[idx]);
                 i++;
             }
-            dropIndex(tableName, attrName);
+            attrNames.push_back(attrName);
         }
         scan.closeScan();
         rm->CloseFile(openedDbName + "/" + tableName + ".index");
+
+        // drop indexes
+        for (auto attrName : attrNames)
+            dropIndex(tableName, attrName);
         rm->DestroyFile(openedDbName + "/" + tableName + ".index");
+
+        // delete from attrcat
+        rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
+        for (auto ri : attrCatRIDs)
+            attrCatHandle.deleteRec(ri);
+        rm->CloseFile(openedDbName + "/attrcat");
+
+        // delete from relcat
+        rm->OpenFile(openedDbName + "/relcat", relCatHandle);
+        relCatHandle.deleteRec(relCatRID);
+        rm->CloseFile(openedDbName + "/relcat");
         return true;
     }
     bool createIndex(const std::string tableName, const std::vector<std::string> &attrName, bool isPrimary)
@@ -450,7 +473,7 @@ public:
         rm->CloseFile(openedDbName + "/" + tableName + ".index");
 
         delete[] data;
-        im->destroyIndex(tableName, indexNo);
+        im->destroyIndex(openedDbName + "/" + tableName, indexNo);
         return true;
     }
     bool getAllAttr(const std::string &tableName, std::vector<std::string> &attrName, std::vector<int> &offsets, std::vector<AttrType> &types, std::vector<int> &typeLens)

@@ -123,53 +123,11 @@ public:
                 }
 
                 // check primary key and index
-                std::vector<std::vector<int>> indexNo;
-                std::vector<int> used_indexNo;
-                sm->getPrimaryKeyAndIndex(tableName, indexNo);
                 bool use_indexNo = false;
+                std::vector<int> used_indexNo;
                 CompOp used_op = CompOp::NO;
                 std::vector<int> used_keys;
-                if (indexNo.size() > 0)
-                {
-                    for (auto index : indexNo)
-                    {
-                        bool use_index = true;
-                        CompOp tmp_op = CompOp::NO;
-                        std::vector<int> tmp_keys;
-                        if (index.size() != conds.size())
-                            continue;
-                        for (auto ind : index)
-                        {
-                            bool flag = false;
-                            for (auto cond : conds)
-                            {
-                                if (cond.offset == ind)
-                                {
-                                    if (tmp_op == CompOp::NO)
-                                        tmp_op = cond.op;
-                                    if (tmp_op <= 4 && tmp_op == cond.op)
-                                    {
-                                        flag = true;
-                                        tmp_keys.push_back(cond.val.Int);
-                                        break;
-                                    }
-                                }
-                            }
-                            if (!flag)
-                            {
-                                use_index = false;
-                                break;
-                            }
-                        }
-                        if (use_index && index.size() > used_indexNo.size())
-                        {
-                            use_indexNo = true;
-                            used_indexNo = index;
-                            used_op = tmp_op;
-                            used_keys = tmp_keys;
-                        }
-                    }
-                }
+                checkPrimaryKeyAndIndex(tableName, conds, use_indexNo, used_indexNo, used_op, used_keys);
 
                 if (use_indexNo)
                 {
@@ -312,34 +270,34 @@ public:
         // check all indexes
         std::vector<std::vector<int>> indexNo;
         sm->getAllIndex(tableName, indexNo);
-        if (indexNo.size() > 0)
-        {
-            for (auto index : indexNo)
-            {
-                std::vector<int> keys;
-                for (auto off : index)
-                {
-                    int tmp;
-                    memcpy(&tmp, newData + off, 4);
-                    keys.push_back(tmp);
-                }
-                im->openIndex(sm->openedDbName + "/" + tableName, index, ih);
-                is.openScan(ih, CompOp::E, keys);
-                while (is.getNextEntry(rid))
-                {
-                    break;
-                }
-                is.closeScan();
+        // if (indexNo.size() > 0)
+        // {
+        //     for (auto index : indexNo)
+        //     {
+        //         std::vector<int> keys;
+        //         for (auto off : index)
+        //         {
+        //             int tmp;
+        //             memcpy(&tmp, newData + off, 4);
+        //             keys.push_back(tmp);
+        //         }
+        //         im->openIndex(sm->openedDbName + "/" + tableName, index, ih);
+        //         is.openScan(ih, CompOp::E, keys);
+        //         while (is.getNextEntry(rid))
+        //         {
+        //             break;
+        //         }
+        //         is.closeScan();
 
-                if (rid.valid())
-                {
-                    std::cout << "Duplicate index." << std::endl;
-                    im->closeIndex(sm->openedDbName + "/" + tableName, index);
-                    return false;
-                }
-                im->closeIndex(sm->openedDbName + "/" + tableName, index);
-            }
-        }
+        //         if (rid.valid())
+        //         {
+        //             std::cout << "Duplicate index." << std::endl;
+        //             im->closeIndex(sm->openedDbName + "/" + tableName, index);
+        //             return false;
+        //         }
+        //         im->closeIndex(sm->openedDbName + "/" + tableName, index);
+        //     }
+        // }
 
         // finally insert
         rm->OpenFile(sm->openedDbName + "/" + tableName, fh);
@@ -402,6 +360,7 @@ public:
         rm->OpenFile(sm->openedDbName + "/" + tableName, fh);
         FileScan fs;
 
+        // translate conditions
         std::vector<CompareCondition> conds;
         for (auto cond : conditions)
         {
@@ -434,15 +393,97 @@ public:
             conds.push_back(cc);
         }
 
-        fs.openScan(fh, conds);
+        // get all indexes
+        std::vector<int> primayKey;
+        sm->getPrimaryKey(tableName, primayKey);
+        std::vector<std::vector<int>> indexNo;
+        sm->getAllIndex(tableName, indexNo);
+
+        // check primary key and index
+        bool use_indexNo = false;
+        std::vector<int> used_indexNo;
+        CompOp used_op = CompOp::NO;
+        std::vector<int> used_keys;
+        checkPrimaryKeyAndIndex(tableName, conds, use_indexNo, used_indexNo, used_op, used_keys);
+
+        // scan for results
+        std::vector<RID> results;
+        IndexHandle ih;
+        IndexScan is;
         Record rec;
-        while (fs.getNextRec(rec))
+        if (use_indexNo)
         {
+            im->openIndex(sm->openedDbName + "/" + tableName, used_indexNo, ih);
+            is.openScan(ih, used_op, used_keys);
             RID rid;
-            rec.getRID(rid);
-            fh.deleteRec(rid);
+            while (is.getNextEntry(rid))
+            {
+                results.push_back(rid);
+            }
+            is.closeScan();
+            im->closeIndex(sm->openedDbName + "/" + tableName, used_indexNo);
         }
-        fs.closeScan();
+        else
+        {
+            fs.openScan(fh, conds);
+            while (fs.getNextRec(rec))
+            {
+                RID rid;
+                rec.getRID(rid);
+                results.push_back(rid);
+            }
+            fs.closeScan();
+        }
+
+        // check primary key
+        if (primayKey.size() > 0)
+        {
+            im->openIndex(sm->openedDbName + "/" + tableName, primayKey, ih);
+            for (auto ri : results)
+            {
+                DataType newData;
+                fh.getRec(ri, rec);
+                rec.getData(newData);
+                std::vector<int> keys;
+                for (auto off : primayKey)
+                {
+                    int tmp;
+                    memcpy(&tmp, newData + off, 4);
+                    keys.push_back(tmp);
+                }
+                ih.deleteEntry(keys, ri);
+            }
+            im->closeIndex(sm->openedDbName + "/" + tableName, primayKey);
+        }
+
+        // check indexes
+        if (indexNo.size() > 0)
+        {
+            for (auto index : indexNo)
+            {
+                im->openIndex(sm->openedDbName + "/" + tableName, index, ih);
+                for (auto ri : results)
+                {
+                    DataType newData;
+                    fh.getRec(ri, rec);
+                    rec.getData(newData);
+                    std::vector<int> keys;
+                    for (auto off : index)
+                    {
+                        int tmp;
+                        memcpy(&tmp, newData + off, 4);
+                        keys.push_back(tmp);
+                    }
+                    ih.deleteEntry(keys, ri);
+                }
+                im->closeIndex(sm->openedDbName + "/" + tableName, index);
+            }
+        }
+
+        // delete in file
+        for (auto ri : results)
+            fh.deleteRec(ri);
+
         rm->CloseFile(sm->openedDbName + "/" + tableName);
         return true;
     }
@@ -626,5 +667,52 @@ public:
         }
         std::cout << "|";
         return true;
+    }
+
+    bool checkPrimaryKeyAndIndex(const std::string &tableName, const std::vector<CompareCondition> &conds, bool &use_indexNo, std::vector<int> &used_indexNo, CompOp &used_op, std::vector<int> &used_keys)
+    {
+        std::vector<std::vector<int>> indexNo;
+        sm->getPrimaryKeyAndIndex(tableName, indexNo);
+        if (indexNo.size() > 0)
+        {
+            for (auto index : indexNo)
+            {
+                bool use_index = true;
+                CompOp tmp_op = CompOp::NO;
+                std::vector<int> tmp_keys;
+                if (index.size() != conds.size())
+                    continue;
+                for (auto ind : index)
+                {
+                    bool flag = false;
+                    for (auto cond : conds)
+                    {
+                        if (cond.offset == ind)
+                        {
+                            if (tmp_op == CompOp::NO)
+                                tmp_op = cond.op;
+                            if (tmp_op <= 4 && tmp_op == cond.op)
+                            {
+                                flag = true;
+                                tmp_keys.push_back(cond.val.Int);
+                                break;
+                            }
+                        }
+                    }
+                    if (!flag)
+                    {
+                        use_index = false;
+                        break;
+                    }
+                }
+                if (use_index && index.size() > used_indexNo.size())
+                {
+                    use_indexNo = true;
+                    used_indexNo = index;
+                    used_op = tmp_op;
+                    used_keys = tmp_keys;
+                }
+            }
+        }
     }
 };

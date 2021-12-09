@@ -55,6 +55,7 @@ public:
         if (pID <= 0)
         {
             getNewPage(pID);
+            ih.height = 1;
             ih.rootPage = pID;
             saveIndexHeader();
             node->header.leftSibling = -1;
@@ -68,7 +69,7 @@ public:
         int index;
         while (node->header.type != NodeType::LEAF)
         {
-            node->searchKeyLowerBound(key, index);
+            node->searchChild(key, index);
             pID = node->children[index];
             delete node;
             node = new TreeNode();
@@ -103,7 +104,7 @@ public:
         int index;
         while (node->header.type != NodeType::LEAF)
         {
-            node->searchKeyLowerBound(key, index);
+            node->searchChild(key, index);
             pID = node->children[index];
             delete node;
             node = new TreeNode();
@@ -127,12 +128,13 @@ public:
             return true;
         }
 
+        int deleted_child = node->header.leftSibling;
         if (mergeEntry(pID, node, false))
         {
             saveTreeNode(pID, node);
             TreeNode *p = new TreeNode();
             loadTreeNode(node->header.parent, p);
-            deleteKey(node->header.parent, p, node->header.leftSibling);
+            deleteKey(node->header.parent, p, deleted_child);
             saveTreeNode(node->header.parent, p);
             delete p;
             delete node;
@@ -163,7 +165,7 @@ public:
         node->keys.erase(node->keys.begin() + index);
         node->children.erase(node->children.begin() + index);
 
-        if (node->keys.size() == 1 && pID == ih.rootPage)
+        if (node->keys.size() <= 0 && pID == ih.rootPage)
         {
             ih.height--;
             ih.rootPage = node->children[0];
@@ -246,15 +248,15 @@ public:
             TreeNode *node = new TreeNode();
             loadTreeNode(pID, node);
             int index;
-            bool found = node->searchKeyLowerBound(key, index);
+            bool found = node->searchChild(key, index);
             if (node->header.type == NodeType::INTERNAL)
             {
-                return searchEntry(node->children[index + 1], key, pageID, slotID);
+                return searchEntry(node->children[index], key, pageID, slotID);
             }
             else
             {
                 pageID = pID;
-                slotID = index;
+                node->searchKeyLowerBound(key, slotID);
                 return found;
             }
         }
@@ -291,15 +293,18 @@ public:
                 memcpy(&child, &d[sizeof(NodeHeader) + i * (4 + 4 * ih.num_attrs)], 4);
                 node->children.push_back(child);
 
-                std::vector<int> key;
-                for (auto j = 0; j < ih.num_attrs && i < node->header.num_keys; j++)
+                if (i < node->header.num_keys)
                 {
-                    int tmp;
-                    memcpy(&tmp, &d[sizeof(NodeHeader) + i * (4 + 4 * ih.num_attrs) + 4 + j * 4], 4);
-                    key.push_back(tmp);
-                }
+                    std::vector<int> key;
+                    for (auto j = 0; j < ih.num_attrs; j++)
+                    {
+                        int tmp;
+                        memcpy(&tmp, &d[sizeof(NodeHeader) + i * (4 + 4 * ih.num_attrs) + 4 + j * 4], 4);
+                        key.push_back(tmp);
+                    }
 
-                node->keys.push_back(key);
+                    node->keys.push_back(key);
+                }
             }
         }
         else
@@ -430,6 +435,7 @@ public:
             saveTreeNode(surrogatePID, surrogateNode);
             saveTreeNode(pID, node);
 
+            ih.height++;
             ih.rootPage = parentPID;
             saveIndexHeader();
             delete parent;
@@ -506,6 +512,7 @@ public:
             saveTreeNode(surrogatePID, surrogateNode);
             saveTreeNode(pID, node);
 
+            ih.height++;
             ih.rootPage = parentPID;
             saveIndexHeader();
             delete parent;
@@ -559,6 +566,7 @@ public:
         saveTreeNode(lenderPID, lenderNode);
 
         delete lenderNode;
+        return true;
     }
 
     bool borrowKeyChild(int pID, TreeNode *node, bool fromRight)
@@ -578,7 +586,7 @@ public:
             TreeNode *p = new TreeNode();
             loadTreeNode(node->header.parent, p);
             int index;
-            p->searchKeyLowerBound(lenderNode->keys[0], index);
+            p->searchChild(lenderNode->keys[0], index);
 
             node->keys.push_back(p->keys[index]);
             node->children.push_back(lenderNode->children[0]);
@@ -596,7 +604,7 @@ public:
             TreeNode *p = new TreeNode();
             loadTreeNode(node->header.parent, p);
             int index;
-            p->searchKeyLowerBound(node->keys[0], index);
+            p->searchChild(node->keys[0], index);
 
             node->keys.insert(node->keys.begin(), p->keys[index]);
             node->children.insert(node->children.begin(), lenderNode->children.back());
@@ -620,10 +628,10 @@ public:
     bool changeParentChild(TreeNode *parent, const std::vector<int> &o, const std::vector<int> &n)
     {
         int index;
-        bool found = parent->searchKeyLowerBound(o, index);
-        assert(found);
-        parent->keys[index] = n;
-        if (index == parent->keys.size() - 1)
+        bool found = parent->searchChild(o, index);
+        // assert(found);
+        parent->keys[index - 1] = n;
+        if (index == parent->keys.size() && parent->header.parent > 0)
         {
             TreeNode *p = new TreeNode();
             loadTreeNode(parent->header.parent, p);
