@@ -329,6 +329,11 @@ public:
         {
             auto it = std::find(attributes.begin(), attributes.end(), name);
             auto idx = std::distance(attributes.begin(), it);
+            if (it == attributes.end())
+            {
+                std::cout << "Attribute " << name << " not exists." << std::endl;
+                return false;
+            }
             indexNo.push_back(offsets[idx]);
         }
 
@@ -439,6 +444,11 @@ public:
         {
             auto it = std::find(attributes.begin(), attributes.end(), name);
             auto idx = std::distance(attributes.begin(), it);
+            if (it == attributes.end())
+            {
+                std::cout << "Attribute " << name << " not exists." << std::endl;
+                return false;
+            }
             indexNo.push_back(offsets[idx]);
         }
 
@@ -739,17 +749,19 @@ public:
             rec.getData(tmp);
             memcpy(indexNo, tmp + 4, 4 * attributes.size());
             int i = 0;
-            while (indexNo[i] >= 0)
+            while (indexNo[i] >= 0 && i < attributes.size())
             {
                 if (i > 0)
                     std::cout << ", ";
                 auto it = std::find(offsets.begin(), offsets.end(), indexNo[i]);
                 auto idx = std::distance(offsets.begin(), it);
                 std::cout << attributes[i];
+                i++;
             }
             std::cout << ")" << std::endl;
         }
         fs.closeScan();
+        rm->CloseFile(openedDbName + "/" + tableName + ".index");
         return true;
     }
     bool checkTableExists(const std::string &tableName)
@@ -930,6 +942,72 @@ public:
         }
         scan.closeScan();
         rm->CloseFile(openedDbName + "/" + tableName + ".index");
+        return true;
+    }
+    bool dropPrimaryKey(const std::string tableName)
+    {
+        if (!dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
+
+        FileScan scan;
+        Record rec;
+        char value[RELNAME_MAX_BYTES] = "\0";
+        strcpy(value, tableName.c_str());
+
+        std::vector<std::string> attributes;
+        std::vector<int> offsets;
+        std::vector<int> indexNo;
+        rm->OpenFile(openedDbName + "/attrcat", attrCatHandle);
+        scan.openScan(attrCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, offsetof(AttrCat, AttrCat::relName), CompOp::E, value);
+        AttrCat *cat = nullptr;
+        while (scan.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            cat = reinterpret_cast<AttrCat *>(tmp);
+            attributes.push_back(cat->attrName);
+            offsets.push_back(cat->offset);
+        }
+        scan.closeScan();
+        rm->CloseFile(openedDbName + "/attrcat");
+
+        if (cat == nullptr)
+        {
+            std::cout << "Table " << tableName << " not exists." << std::endl;
+            return false;
+        }
+
+        int *data = new int[attributes.size()];
+        memset(data, 0, 4 * attributes.size());
+        FileHandle hd;
+        rm->OpenFile(openedDbName + "/" + tableName + ".index", hd);
+        RID r(-1, -1);
+        int primary = 1;
+        scan.openScan(hd, AttrType::INT, 4, 0, CompOp::E, &primary);
+        while (scan.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            memcpy(data, tmp + 4, 4 * attributes.size());
+            rec.getRID(r);
+        }
+        scan.closeScan();
+        if (!r.valid())
+        {
+            std::cout << "Primary Key not exists." << std::endl;
+            rm->CloseFile(openedDbName + "/" + tableName + ".index");
+            return false;
+        }
+        hd.deleteRec(r);
+        rm->CloseFile(openedDbName + "/" + tableName + ".index");
+
+        for (int i = 0; i < attributes.size() && data[i] >= 0; i++)
+            indexNo.push_back(data[i]);
+        delete[] data;
+        im->destroyIndex(openedDbName + "/" + tableName, indexNo);
         return true;
     }
 };

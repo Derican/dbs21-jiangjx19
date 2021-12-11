@@ -190,12 +190,13 @@ public:
             return true;
         }
 
+        int deleted_child = node->header.leftSibling;
         if (mergeChild(pID, node, false))
         {
             saveTreeNode(pID, node);
             TreeNode *p = new TreeNode();
             loadTreeNode(node->header.parent, p);
-            deleteKey(node->header.parent, p, node->header.leftSibling);
+            deleteKey(node->header.parent, p, deleted_child);
             saveTreeNode(node->header.parent, p);
             delete p;
             delete node;

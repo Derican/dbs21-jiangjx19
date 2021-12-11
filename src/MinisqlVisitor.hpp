@@ -460,4 +460,42 @@ public:
             qm->select(selectors, relations, conditions, results, false);
         return;
     }
+
+    antlrcpp::Any visitAlter_add_index(SQLParser::Alter_add_indexContext *ctx)
+    {
+        std::string tableName = ctx->Identifier()->getText();
+
+        std::vector<std::string> attrName;
+        for (auto attr : ctx->identifiers()->Identifier())
+            attrName.push_back(attr->getText());
+
+        sm->createIndex(tableName, attrName, false);
+
+        antlrcpp::Any res;
+        return res;
+    }
+
+    antlrcpp::Any visitAlter_drop_index(SQLParser::Alter_drop_indexContext *ctx)
+    {
+        std::string tableName = ctx->Identifier()->getText();
+
+        std::vector<std::string> attrName;
+        for (auto attr : ctx->identifiers()->Identifier())
+            attrName.push_back(attr->getText());
+
+        sm->dropIndex(tableName, attrName);
+
+        antlrcpp::Any res;
+        return res;
+    }
+
+    antlrcpp::Any visitAlter_table_drop_pk(SQLParser::Alter_table_drop_pkContext *ctx)
+    {
+        std::string tableName = ctx->Identifier(0)->getText();
+
+        sm->dropPrimaryKey(tableName);
+
+        antlrcpp::Any res;
+        return res;
+    }
 };
