@@ -63,9 +63,8 @@ public:
         int index;
         for (; pageID < fh.numPages; pageID++)
         {
-            if (curPage == nullptr)
-                curPage = reinterpret_cast<DataType>(bpm->getPage(fileID, pageID, index));
-            SlotMap slotMap(curPage, fh.slotMapSize);
+            curPage = reinterpret_cast<DataType>(bpm->getPage(fileID, pageID, index));
+            SlotMap slotMap(curPage, fh.capacity);
             for (; slotID < fh.capacity; slotID++)
             {
                 if (slotMap.test(slotID) && compare(&curPage[fh.slotMapSize + fh.slotSize * slotID]))
@@ -75,7 +74,6 @@ public:
                     return true;
                 }
             }
-            curPage = nullptr;
         }
         return false;
     }

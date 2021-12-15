@@ -2,6 +2,7 @@
 
 #include <string>
 #include <memory.h>
+#include <map>
 #include "../recmanager/constants.h"
 #include "IndexHandle.hpp"
 #include "../fileio/FileManager.h"
@@ -13,15 +14,14 @@ class IndexManager
 private:
     FileManager *fm;
     BufPageManager *bpm;
-    int openedID;
+    std::map<std::string, int> openedMap;
 
 public:
-    IndexManager() { openedID = -1; }
+    IndexManager() {}
     IndexManager(FileManager *_fm, BufPageManager *_bpm)
     {
         fm = _fm;
         bpm = _bpm;
-        openedID = -1;
     }
     ~IndexManager()
     {
@@ -69,25 +69,30 @@ public:
 
     bool openIndex(const std::string filename, std::vector<int> &indexNo, IndexHandle &indexHandle)
     {
-        if (openedID >= 0)
-            return false;
         string fn_ix = filename;
         for (auto in : indexNo)
             fn_ix += '.' + to_string(in);
+        auto it = openedMap.find(fn_ix);
+        if (it != openedMap.end())
+            return false;
         int fileID;
         fm->openFile(fn_ix.c_str(), fileID);
-        openedID = fileID;
+        openedMap[fn_ix] = fileID;
         indexHandle = IndexHandle(fileID, bpm);
         return true;
     }
 
     bool closeIndex(const std::string filename, std::vector<int> &indexNo)
     {
-        if (openedID < 0)
+        string fn_ix = filename;
+        for (auto in : indexNo)
+            fn_ix += '.' + to_string(in);
+        auto it = openedMap.find(fn_ix);
+        if (it == openedMap.end())
             return false;
         bpm->close();
-        fm->closeFile(openedID);
-        openedID = -1;
+        fm->closeFile(it->second);
+        openedMap.erase(it);
         return true;
     }
 };

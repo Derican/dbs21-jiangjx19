@@ -38,3 +38,26 @@ struct Condition
     Value rhsValue;
     std::vector<Value> rhsValues;
 };
+
+inline CompOp negOp(CompOp op)
+{
+    switch (op)
+    {
+    case CompOp::L:
+        return CompOp::G;
+        break;
+    case CompOp::LE:
+        return CompOp::GE;
+        break;
+    case CompOp::G:
+        return CompOp::L;
+        break;
+    case CompOp::GE:
+        return CompOp::LE;
+        break;
+    default:
+        return op;
+        break;
+    }
+    return op;
+}
