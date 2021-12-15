@@ -1010,4 +1010,83 @@ public:
         im->destroyIndex(openedDbName + "/" + tableName, indexNo);
         return true;
     }
+    bool showAllIndexes()
+    {
+        if (!dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
+
+        // get all tables
+        std::vector<std::string> tableNames;
+        rm->OpenFile(openedDbName + "/relcat", relCatHandle);
+        FileScan fs;
+        fs.openScan(relCatHandle, AttrType::VARCHAR, RELNAME_MAX_BYTES, 0, CompOp::NO, nullptr);
+        Record rec;
+        while (fs.getNextRec(rec))
+        {
+            DataType tmp;
+            rec.getData(tmp);
+            tableNames.push_back(tmp);
+        }
+        fs.closeScan();
+        rm->CloseFile(openedDbName + "/relcat");
+
+        // get and print every index on each table
+        std::cout << "+-------+---------+---------+" << std::endl
+                  << "| Table | PRIMARY | columns |" << std::endl
+                  << "+-------+---------+---------+" << std::endl;
+        for (auto tableName : tableNames)
+        {
+            std::vector<std::string> allAttrName;
+            std::vector<int> allOffsets;
+            std::vector<AttrType> allTypes;
+            std::vector<int> allTypeLens;
+            getAllAttr(tableName, allAttrName, allOffsets, allTypes, allTypeLens);
+
+            // print primary key
+            std::vector<int> primaryKey;
+            getPrimaryKey(tableName, primaryKey);
+            if (primaryKey.size() > 0)
+            {
+                std::cout << "|" << std::left << setw(7) << tableName << "|"
+                          << "YES      "
+                          << "|";
+                string col;
+                for (auto key : primaryKey)
+                {
+                    auto it = std::find(allOffsets.begin(), allOffsets.end(), key);
+                    auto idx = std::distance(allOffsets.begin(), it);
+                    col += allAttrName[idx] + ",";
+                }
+                col.pop_back();
+                std::cout << std::left << setw(9) << col << "|" << std::endl;
+            }
+
+            // print indexes
+            std::vector<std::vector<int>> indexNo;
+            getAllIndex(tableName, indexNo);
+            if (indexNo.size() > 0)
+            {
+                for (auto index : indexNo)
+                {
+                    std::cout << "|" << std::left << setw(7) << tableName << "|"
+                              << "NO       "
+                              << "|";
+                    string col;
+                    for (auto key : index)
+                    {
+                        auto it = std::find(allOffsets.begin(), allOffsets.end(), key);
+                        auto idx = std::distance(allOffsets.begin(), it);
+                        col += allAttrName[idx] + ",";
+                    }
+                    col.pop_back();
+                    std::cout << std::left << setw(9) << col << "|" << std::endl;
+                }
+            }
+        }
+        std::cout << "+-------+---------+---------+" << std::endl;
+        return true;
+    }
 };

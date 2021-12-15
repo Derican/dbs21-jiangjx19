@@ -215,6 +215,25 @@ public:
         return res;
     }
 
+    antlrcpp::Any visitShow_indexes(SQLParser::Show_indexesContext *ctx) override
+    {
+        sm->showAllIndexes();
+        antlrcpp::Any res;
+        return res;
+    }
+
+    antlrcpp::Any visitLoad_data(SQLParser::Load_dataContext *ctx) override
+    {
+        antlrcpp::Any res;
+        return res;
+    }
+
+    antlrcpp::Any visitDump_data(SQLParser::Dump_dataContext *ctx) override
+    {
+        antlrcpp::Any res;
+        return res;
+    }
+
     antlrcpp::Any visitCreate_table(SQLParser::Create_tableContext *ctx) override
     {
         std::string tableName = ctx->Identifier()->getText();
