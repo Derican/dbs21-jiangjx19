@@ -1089,4 +1089,100 @@ public:
         std::cout << "+-------+---------+---------+" << std::endl;
         return true;
     }
+    bool dumpToFile(const std::string &filename, const std::string &tableName)
+    {
+        if (!dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
+
+        if (!checkTableExists(tableName))
+        {
+            std::cout << "Table " << tableName << " not exists." << std::endl;
+            return false;
+        }
+
+        // get all attr
+        std::vector<std::string> allAttrName;
+        std::vector<int> allOffsets;
+        std::vector<AttrType> allTypes;
+        std::vector<int> allTypeLens;
+        getAllAttr(tableName, allAttrName, allOffsets, allTypes, allTypeLens);
+
+        // set file ostream
+        std::streambuf *coutBuf = std::cout.rdbuf();
+        std::ofstream of(filename);
+        std::streambuf *fileBuf = of.rdbuf();
+        std::cout.rdbuf(fileBuf);
+
+        // print column name
+        std::string attrStr;
+        for (auto name : allAttrName)
+            attrStr += name + "'";
+        attrStr.pop_back();
+        attrStr += '\n';
+        std::cout << attrStr;
+
+        FileHandle fh;
+        rm->OpenFile(openedDbName + "/" + tableName, fh);
+        FileScan fs;
+        fs.openScan(fh, AttrType::ANY, -1, -1, CompOp::NO, nullptr);
+        Record rec;
+        while (fs.getNextRec(rec))
+        {
+            DataType data;
+            rec.getData(data);
+
+            std::string recStr;
+            SlotMap nullMap(data, allAttrName.size());
+            for (int i = 0; i < allAttrName.size(); i++)
+            {
+                if (nullMap.test(i))
+                    recStr += "NULL'";
+                else
+                {
+                    switch (allTypes[i])
+                    {
+                    case AttrType::INT:
+                    {
+                        int *val = new int;
+                        memcpy(val, data + allOffsets[i], sizeof(int));
+                        recStr += std::to_string(*val) + "'";
+                        break;
+                    }
+                    case AttrType::FLOAT:
+                    {
+                        float *val = new float;
+                        memcpy(val, data + allOffsets[i], sizeof(float));
+                        recStr += std::to_string(*val) + "'";
+                        break;
+                    }
+                    case AttrType::VARCHAR:
+                    {
+                        char *val = new char[allTypeLens[i]];
+                        memcpy(val, data + allOffsets[i], allTypeLens[i]);
+                        recStr += std::string(val) + "'";
+                        break;
+                    }
+                    default:
+                        recStr += "NULL'";
+                        break;
+                    }
+                }
+            }
+            recStr.pop_back();
+            recStr += "\n";
+            std::cout << recStr;
+        }
+        fs.closeScan();
+        rm->CloseFile(openedDbName + "/" + tableName);
+
+        // reset file ostream
+        of.flush();
+        of.close();
+        std::cout.rdbuf(coutBuf);
+
+        return true;
+    }
 };

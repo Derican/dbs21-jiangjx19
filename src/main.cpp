@@ -63,7 +63,15 @@ int main(int, const char **)
         sSQL = getSql();
         if (sSQL == "EXIT;" || sSQL == "QUIT;")
             break;
-        parse(sSQL, sm, qm);
+        try
+        {
+            parse(sSQL, sm, qm);
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << e.what() << '\n';
+            std::cout << "Error! Some data may be deprecated." << std::endl;
+        }
     }
 
     delete qm;

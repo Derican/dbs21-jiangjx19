@@ -1332,4 +1332,90 @@ public:
         }
         return true;
     }
+    bool loadFromFile(const std::string &filename, const std::string &tableName)
+    {
+        if (!sm->dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
+
+        if (!sm->checkTableExists(tableName))
+        {
+            std::cout << "Table " << tableName << " not exists." << std::endl;
+            return false;
+        }
+
+        // get all attr
+        std::vector<std::string> allAttrName;
+        std::vector<int> allOffsets;
+        std::vector<AttrType> allTypes;
+        std::vector<int> allTypeLens;
+        sm->getAllAttr(tableName, allAttrName, allOffsets, allTypes, allTypeLens);
+
+        // set file istream
+        std::string dummy;
+        std::ifstream ifs(filename);
+        std::getline(ifs, dummy);
+        std::vector<std::string> dumNames;
+        SplitString(dummy, dumNames, "'");
+        if (dumNames != allAttrName)
+        {
+            std::cout << "Incompatitable attributes." << std::endl;
+            return false;
+        }
+
+        std::string lor;
+        while (std::getline(ifs, lor))
+        {
+            std::vector<std::string> valStrings;
+            SplitString(lor, valStrings, "'");
+            if (valStrings.size() != allAttrName.size())
+            {
+                std::cout << "Broken line at: " << lor << std::endl;
+                continue;
+            }
+
+            std::vector<Value> values;
+            for (auto i = 0; i < valStrings.size(); i++)
+            {
+                Value val;
+                switch (allTypes[i])
+                {
+                case AttrType::INT:
+                {
+                    val.type = AttrType::INT;
+                    val.len = 4;
+                    val.pData.Int = std::stoi(valStrings[i]);
+                    break;
+                }
+                case AttrType::FLOAT:
+                {
+                    val.type = AttrType::FLOAT;
+                    val.len = 4;
+                    val.pData.Float = std::stof(valStrings[i]);
+                    break;
+                }
+                case AttrType::VARCHAR:
+                {
+                    val.type = AttrType::VARCHAR;
+                    val.len = valStrings.size();
+                    if (val.len >= allTypeLens[i])
+                    {
+                        std::cout << "WARNING: Too long VARCHAR at: " << lor << std::endl;
+                        val.len = allTypeLens[i];
+                    }
+                    memcpy(&val.pData, valStrings[i].c_str(), val.len);
+                    break;
+                }
+                default:
+                    break;
+                }
+                values.push_back(val);
+            }
+            insert(tableName, values);
+        }
+        ifs.close();
+        return true;
+    }
 };

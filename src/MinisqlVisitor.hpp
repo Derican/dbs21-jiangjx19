@@ -224,12 +224,22 @@ public:
 
     antlrcpp::Any visitLoad_data(SQLParser::Load_dataContext *ctx) override
     {
+        std::string filename = ctx->String()->getText();
+        filename = filename.substr(1, filename.size() - 2);
+        std::string tableName = ctx->Identifier()->getText();
+
+        qm->loadFromFile(filename, tableName);
         antlrcpp::Any res;
         return res;
     }
 
     antlrcpp::Any visitDump_data(SQLParser::Dump_dataContext *ctx) override
     {
+        std::string filename = ctx->String()->getText();
+        filename = filename.substr(1, filename.size() - 2);
+        std::string tableName = ctx->Identifier()->getText();
+
+        sm->dumpToFile(filename, tableName);
         antlrcpp::Any res;
         return res;
     }
