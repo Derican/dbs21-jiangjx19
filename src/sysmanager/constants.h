@@ -19,13 +19,13 @@ struct AttrInfo
 
 struct PrimaryKey
 {
-    std::string relName;
+    std::string name;
     std::vector<std::string> keys;
 };
 
 struct ForeignKey
 {
-    std::string relName;
+    std::string name;
     std::vector<std::string> attrs;
     std::string ref;
     std::vector<std::string> refAttrs;

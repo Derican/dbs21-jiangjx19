@@ -104,12 +104,12 @@ public:
             if (keyCompare(keys[left], e) == -1)
             {
                 index = left;
-                return index >= 1 && keyCompare(keys[index - 1], e) == 0;
+                return keyCompare(keys[index - 1], e) == 0;
             }
             left++;
         }
         index = left;
-        return false;
+        return keyCompare(keys[index - 1], e) == 0;
     }
 
     bool insertKeyChild(const std::vector<int> &e, int child)

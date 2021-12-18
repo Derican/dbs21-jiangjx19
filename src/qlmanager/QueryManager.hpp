@@ -77,7 +77,7 @@ public:
 
             // get value
             FileHandle fh;
-            rm->OpenFile(sm->openedDbName + "/" + tableName, fh);
+            rm->openFile(sm->openedDbName + "/" + tableName, fh);
             FileScan fs;
 
             if (conditions.size() == 0)
@@ -168,7 +168,7 @@ public:
                 std::cout << results.size() << " record(s) selected." << std::endl;
             }
 
-            rm->CloseFile(sm->openedDbName + "/" + tableName);
+            rm->closeFile(sm->openedDbName + "/" + tableName);
         }
         else if (relations.size() == 2)
         {
@@ -242,8 +242,8 @@ public:
 
             // get value
             FileHandle lfh, rfh;
-            rm->OpenFile(sm->openedDbName + "/" + leftTableName, lfh);
-            rm->OpenFile(sm->openedDbName + "/" + rightTableName, rfh);
+            rm->openFile(sm->openedDbName + "/" + leftTableName, lfh);
+            rm->openFile(sm->openedDbName + "/" + rightTableName, rfh);
             RID defaultRID(-1, -1);
             FileScan lfs, rfs;
             DataType joinedData = new char[leftTupleLen + rightTupleLen];
@@ -675,8 +675,8 @@ public:
                 std::cout << results.size() << " record(s) selected." << std::endl;
             }
 
-            rm->CloseFile(sm->openedDbName + "/" + leftTableName);
-            rm->CloseFile(sm->openedDbName + "/" + rightTableName);
+            rm->closeFile(sm->openedDbName + "/" + leftTableName);
+            rm->closeFile(sm->openedDbName + "/" + rightTableName);
         }
         return true;
     }
@@ -693,6 +693,8 @@ public:
             std::cout << "Table " << tableName << " not exists." << std::endl;
             return false;
         }
+
+        // get table info
         std::vector<std::string> attrName;
         std::vector<int> offsets;
         std::vector<bool> nulls;
@@ -703,6 +705,7 @@ public:
 
         sm->getAllAttr(tableName, attrName, offsets, types, typeLens, nulls, defaultValids, defaults);
 
+        // get new data
         int tupleLength = offsets.back() + typeLens.back();
         DataType newData = new char[tupleLength];
         memset(newData, 0, tupleLength);
@@ -768,6 +771,7 @@ public:
             {
                 std::cout << "Duplicate primary key." << std::endl;
                 im->closeIndex(sm->openedDbName + "/" + tableName, primayKey);
+                delete[] newData;
                 return false;
             }
             im->closeIndex(sm->openedDbName + "/" + tableName, primayKey);
@@ -805,10 +809,75 @@ public:
         //     }
         // }
 
+        // check unique
+        std::vector<std::vector<int>> uniqueNo;
+        sm->getUnique(tableName, uniqueNo);
+        bool flag = false;
+        for (auto uniq : uniqueNo)
+        {
+            rm->openFile(sm->openedDbName + "/" + tableName, fh);
+            DataType data;
+            Record rec;
+            fs.openScan(fh, AttrType::ANY, 4, 0, CompOp::NO, nullptr);
+            while (fs.getNextRec(rec))
+            {
+                flag = true;
+                rec.getData(data);
+                for (auto i = 0; i < uniq.size() && flag; i++)
+                {
+                    auto it = std::find(offsets.begin(), offsets.end(), uniq[i]);
+                    auto idx = std::distance(offsets.begin(), it);
+                    if (memcmp(newData + uniq[i], data + uniq[i], typeLens[idx]) != 0)
+                        flag = false;
+                }
+                if (flag)
+                    break;
+            }
+            fs.closeScan();
+            rm->closeFile(sm->openedDbName + "/" + tableName);
+            if (flag)
+                break;
+        }
+        if (flag)
+        {
+            std::cout << "Duplicate value." << std::endl;
+            delete[] newData;
+            return false;
+        }
+
+        // check foreign key
+        std::vector<std::string> refTableName, foreignNames;
+        std::vector<std::vector<int>> foreignNo, refForeignNo;
+        sm->getForeign(tableName, refTableName, foreignNo, refForeignNo, foreignNames);
+        flag = true;
+        for (int i = 0; i < refTableName.size() && flag; i++)
+        {
+            flag = false;
+            std::vector<int> keys;
+            for (int j = 0; j < foreignNo[i].size(); j++)
+            {
+                int k;
+                memcpy(&k, newData + foreignNo[i][j], 4);
+                keys.push_back(k);
+            }
+            IndexHandle ih;
+            im->openIndex(sm->openedDbName + "/" + refTableName[i], refForeignNo[i], ih);
+            flag = ih.searchEntry(keys);
+            im->closeIndex(sm->openedDbName + "/" + refTableName[i], refForeignNo[i]);
+            if (!flag)
+            {
+                std::cout << "ERROR: Foreign key (";
+                for (auto k : keys)
+                    std::cout << k << " ";
+                std::cout << ") doesn't match any in the reference table " << refTableName[i] << std::endl;
+                return false;
+            }
+        }
+
         // finally insert
-        rm->OpenFile(sm->openedDbName + "/" + tableName, fh);
+        rm->openFile(sm->openedDbName + "/" + tableName, fh);
         fh.insertRec(newData, rid);
-        rm->CloseFile(sm->openedDbName + "/" + tableName);
+        rm->closeFile(sm->openedDbName + "/" + tableName);
         if (primayKey.size() > 0)
         {
             std::vector<int> keys;
@@ -863,7 +932,7 @@ public:
         sm->getAllAttr(tableName, allAttrName, allOffsets, allTypes, allTypeLens);
         // get value
         FileHandle fh;
-        rm->OpenFile(sm->openedDbName + "/" + tableName, fh);
+        rm->openFile(sm->openedDbName + "/" + tableName, fh);
         FileScan fs;
 
         // translate conditions
@@ -986,11 +1055,150 @@ public:
             }
         }
 
+        // check ref
+        std::vector<std::string> foreignTable;
+        std::vector<std::vector<int>> refIndexNo, foreignIndexNo;
+        sm->getReference(tableName, foreignTable, refIndexNo, foreignIndexNo);
+        for (int i = 0; i < foreignTable.size(); i++)
+        {
+            im->openIndex(sm->openedDbName + "/" + foreignTable[i], foreignIndexNo[i], ih);
+            std::vector<RID> foreignRID;
+            for (auto ri : results)
+            {
+                DataType newData;
+                fh.getRec(ri, rec);
+                rec.getData(newData);
+                std::vector<int> keys;
+                for (auto off : refIndexNo[i])
+                {
+                    int tmp;
+                    memcpy(&tmp, newData + off, 4);
+                    keys.push_back(tmp);
+                }
+                is.openScan(ih, CompOp::E, keys);
+                RID fr;
+                while (is.getNextEntry(fr))
+                    foreignRID.push_back(fr);
+                is.closeScan();
+            }
+            im->closeIndex(sm->openedDbName + "/" + foreignTable[i], foreignIndexNo[i]);
+            deleta(foreignTable[i], foreignRID);
+        }
+
         // delete in file
         for (auto ri : results)
             fh.deleteRec(ri);
 
-        rm->CloseFile(sm->openedDbName + "/" + tableName);
+        rm->closeFile(sm->openedDbName + "/" + tableName);
+        return true;
+    }
+
+    bool deleta(const std::string &tableName, const std::vector<RID> &results)
+    {
+        if (!sm->dbOpened)
+        {
+            std::cout << "No database used." << std::endl;
+            return false;
+        }
+        if (!sm->checkTableExists(tableName))
+        {
+            std::cout << "Table " << tableName << " not exists." << std::endl;
+            return false;
+        }
+
+        FileHandle fh;
+        rm->openFile(sm->openedDbName + "/" + tableName, fh);
+        FileScan fs;
+        Record rec;
+        IndexHandle ih;
+        IndexScan is;
+
+        // get all indexes
+        std::vector<int> primayKey;
+        sm->getPrimaryKey(tableName, primayKey);
+        std::vector<std::vector<int>> indexNo;
+        sm->getAllIndex(tableName, indexNo);
+
+        // check primary key
+        if (primayKey.size() > 0)
+        {
+            im->openIndex(sm->openedDbName + "/" + tableName, primayKey, ih);
+            for (auto ri : results)
+            {
+                DataType newData;
+                fh.getRec(ri, rec);
+                rec.getData(newData);
+                std::vector<int> keys;
+                for (auto off : primayKey)
+                {
+                    int tmp;
+                    memcpy(&tmp, newData + off, 4);
+                    keys.push_back(tmp);
+                }
+                ih.deleteEntry(keys, ri);
+            }
+            im->closeIndex(sm->openedDbName + "/" + tableName, primayKey);
+        }
+
+        // check indexes
+        if (indexNo.size() > 0)
+        {
+            for (auto index : indexNo)
+            {
+                im->openIndex(sm->openedDbName + "/" + tableName, index, ih);
+                for (auto ri : results)
+                {
+                    DataType newData;
+                    fh.getRec(ri, rec);
+                    rec.getData(newData);
+                    std::vector<int> keys;
+                    for (auto off : index)
+                    {
+                        int tmp;
+                        memcpy(&tmp, newData + off, 4);
+                        keys.push_back(tmp);
+                    }
+                    ih.deleteEntry(keys, ri);
+                }
+                im->closeIndex(sm->openedDbName + "/" + tableName, index);
+            }
+        }
+
+        // check ref
+        std::vector<std::string> foreignTable;
+        std::vector<std::vector<int>> refIndexNo, foreignIndexNo;
+        sm->getReference(tableName, foreignTable, refIndexNo, foreignIndexNo);
+        for (int i = 0; i < foreignTable.size(); i++)
+        {
+            im->openIndex(sm->openedDbName + "/" + foreignTable[i], foreignIndexNo[i], ih);
+            for (auto ri : results)
+            {
+                DataType newData;
+                fh.getRec(ri, rec);
+                rec.getData(newData);
+                std::vector<int> keys;
+                for (auto off : refIndexNo[i])
+                {
+                    int tmp;
+                    memcpy(&tmp, newData + off, 4);
+                    keys.push_back(tmp);
+                }
+                std::vector<RID> foreignRID;
+                is.openScan(ih, CompOp::E, keys);
+                RID fr;
+                while (is.getNextEntry(fr))
+                    foreignRID.push_back(fr);
+                is.closeScan();
+                deleta(foreignTable[i], foreignRID);
+            }
+            im->closeIndex(sm->openedDbName + "/" + foreignTable[i], foreignIndexNo[i]);
+        }
+
+        // delete in file
+        for (auto ri : results)
+            fh.deleteRec(ri);
+
+        rm->closeFile(sm->openedDbName + "/" + tableName);
         return true;
     }
 
@@ -1017,9 +1225,10 @@ public:
         std::vector<defaultValue> defaults;
 
         sm->getAllAttr(tableName, allAttrName, allOffsets, allTypes, allTypeLens, nulls, defaultValids, defaults);
+        int tupleLen = allOffsets.back() + allTypeLens.back();
         // get value
         FileHandle fh;
-        rm->OpenFile(sm->openedDbName + "/" + tableName, fh);
+        rm->openFile(sm->openedDbName + "/" + tableName, fh);
         FileScan fs;
 
         std::vector<CompareCondition> conds;
@@ -1096,7 +1305,87 @@ public:
             fs.closeScan();
         }
 
-        // check primary key
+        // check unique
+        std::vector<std::vector<int>> uniqueNo;
+        sm->getUnique(tableName, uniqueNo);
+        for (auto ri : results)
+        {
+            bool flag = false;
+            DataType newData;
+            fh.getRec(ri, rec);
+            rec.getData(newData);
+            if (!updateRecordData(newData, allAttrName, nulls, allOffsets, allTypes, allTypeLens, sets))
+                continue;
+            for (auto uniq : uniqueNo)
+            {
+                DataType data;
+                Record rec;
+                fs.openScan(fh, AttrType::ANY, 4, 0, CompOp::NO, nullptr);
+                while (fs.getNextRec(rec))
+                {
+                    flag = true;
+                    rec.getData(data);
+                    for (auto i = 0; i < uniq.size() && flag; i++)
+                    {
+                        auto it = std::find(allOffsets.begin(), allOffsets.end(), uniq[i]);
+                        auto idx = std::distance(allOffsets.begin(), it);
+                        if (memcmp(newData + uniq[i], data + uniq[i], allTypeLens[idx]) != 0)
+                            flag = false;
+                    }
+                    if (flag)
+                        break;
+                }
+                fs.closeScan();
+                if (flag)
+                    break;
+            }
+            if (flag)
+            {
+                std::cout << "Duplicate value." << std::endl;
+                rm->closeFile(sm->openedDbName + "/" + tableName);
+                return false;
+            }
+        }
+
+        // check ref
+        std::vector<std::string> refTableName, foreignNames;
+        std::vector<std::vector<int>> foreignNo, refForeignNo;
+        sm->getForeign(tableName, refTableName, foreignNo, refForeignNo, foreignNames);
+        bool flag = true;
+        for (auto ri : results)
+        {
+            DataType newData;
+            fh.getRec(ri, rec);
+            rec.getData(newData);
+            if (!updateRecordData(newData, allAttrName, nulls, allOffsets, allTypes, allTypeLens, sets))
+                continue;
+            for (int i = 0; i < refTableName.size() && flag; i++)
+            {
+                flag = false;
+                std::vector<int> keys;
+                for (int j = 0; j < foreignNo[i].size(); j++)
+                {
+                    int k;
+                    memcpy(&k, newData + foreignNo[i][j], 4);
+                    keys.push_back(k);
+                }
+                IndexHandle ih;
+                im->openIndex(sm->openedDbName + "/" + refTableName[i], refForeignNo[i], ih);
+                flag = ih.searchEntry(keys);
+                im->closeIndex(sm->openedDbName + "/" + refTableName[i], refForeignNo[i]);
+                if (!flag)
+                {
+                    std::cout << "ERROR: Foreign key (";
+                    for (auto k : keys)
+                        std::cout << k << " ";
+                    std::cout << ") doesn't match any in the reference table " << refTableName[i] << std::endl;
+                    rm->closeFile(sm->openedDbName + "/" + tableName);
+                    return false;
+                }
+            }
+        }
+
+        // check and update primary key
         if (primayKey.size() > 0)
         {
             im->openIndex(sm->openedDbName + "/" + tableName, primayKey, ih);
@@ -1105,7 +1394,7 @@ public:
                 DataType newData;
                 fh.getRec(ri, rec);
                 rec.getData(newData);
-                std::vector<int> keys;
+                std::vector<int> keys, newKeys;
                 for (auto off : primayKey)
                 {
                     int tmp;
@@ -1114,21 +1403,26 @@ public:
                 }
                 if (updateRecordData(newData, allAttrName, nulls, allOffsets, allTypes, allTypeLens, sets))
                 {
-                    ih.deleteEntry(keys, ri);
-                    keys.clear();
                     for (auto off : primayKey)
                     {
                         int tmp;
                         memcpy(&tmp, newData + off, 4);
-                        keys.push_back(tmp);
+                        newKeys.push_back(tmp);
                     }
-                    ih.insertEntry(keys, ri);
+                    if (keys != newKeys && ih.searchEntry(newKeys))
+                    {
+                        std::cout << "Duplicate primary key." << std::endl;
+                        im->closeIndex(sm->openedDbName + "/" + tableName, primayKey);
+                        return false;
+                    }
+                    ih.deleteEntry(keys, ri);
+                    ih.insertEntry(newKeys, ri);
                 }
             }
             im->closeIndex(sm->openedDbName + "/" + tableName, primayKey);
         }
 
-        // check indexes
+        // update indexes
         if (indexNo.size() > 0)
         {
             for (auto index : indexNo)
@@ -1163,6 +1457,52 @@ public:
             }
         }
 
+        // update foreign
+        std::vector<std::string> foreignTable;
+        std::vector<std::vector<int>> refIndexNo, foreignIndexNo;
+        sm->getReference(tableName, foreignTable, refIndexNo, foreignIndexNo);
+        for (auto ri : results)
+        {
+            DataType newData;
+            fh.getRec(ri, rec);
+            rec.getData(newData);
+            DataType oldData = new char[tupleLen];
+            memcpy(oldData, newData, tupleLen);
+            if (!updateRecordData(newData, allAttrName, nulls, allOffsets, allTypes, allTypeLens, sets))
+            {
+                delete[] oldData;
+                continue;
+            }
+            for (int i = 0; i < foreignTable.size(); i++)
+            {
+                std::vector<std::string> allFornAttrName;
+                std::vector<int> allFornOffsets;
+                std::vector<AttrType> allFornTypes;
+                std::vector<int> allFornTypeLens;
+                sm->getAllAttr(foreignTable[i], allFornAttrName, allFornOffsets, allFornTypes, allFornTypeLens);
+
+                std::vector<Condition> fornSets, fornConds;
+                for (int j = 0; j < foreignIndexNo[i].size(); j++)
+                {
+                    Condition cond;
+                    auto it = std::find(allFornOffsets.begin(), allFornOffsets.end(), foreignIndexNo[i][j]);
+                    auto idx = std::distance(allFornOffsets.begin(), it);
+                    cond.lhs = RelAttr(foreignTable[i], allFornAttrName[idx]);
+                    cond.op = CompOp::E;
+                    cond.bRhsIsAttr = 0;
+                    memcpy(&cond.rhsValue.pData, oldData + refIndexNo[i][j], 4);
+                    cond.rhsValue.len = 4;
+                    cond.rhsValue.type = AttrType::INT;
+                    fornConds.push_back(cond);
+
+                    memcpy(&cond.rhsValue.pData, newData + refIndexNo[i][j], 4);
+                    fornSets.push_back(cond);
+                }
+                update(foreignTable[i], fornSets, fornConds);
+            }
+            delete[] oldData;
+        }
+
         // update in file
         for (auto ri : results)
         {
@@ -1173,7 +1513,7 @@ public:
                 fh.updateRec(rec);
         }
 
-        rm->CloseFile(sm->openedDbName + "/" + tableName);
+        rm->closeFile(sm->openedDbName + "/" + tableName);
         return true;
     }
 
@@ -1380,36 +1720,43 @@ public:
             for (auto i = 0; i < valStrings.size(); i++)
             {
                 Value val;
-                switch (allTypes[i])
+                if (valStrings[i] == "NULL")
                 {
-                case AttrType::INT:
-                {
-                    val.type = AttrType::INT;
-                    val.len = 4;
-                    val.pData.Int = std::stoi(valStrings[i]);
-                    break;
+                    val.type = AttrType::NONE;
                 }
-                case AttrType::FLOAT:
+                else
                 {
-                    val.type = AttrType::FLOAT;
-                    val.len = 4;
-                    val.pData.Float = std::stof(valStrings[i]);
-                    break;
-                }
-                case AttrType::VARCHAR:
-                {
-                    val.type = AttrType::VARCHAR;
-                    val.len = valStrings.size();
-                    if (val.len >= allTypeLens[i])
+                    switch (allTypes[i])
                     {
-                        std::cout << "WARNING: Too long VARCHAR at: " << lor << std::endl;
-                        val.len = allTypeLens[i];
+                    case AttrType::INT:
+                    {
+                        val.type = AttrType::INT;
+                        val.len = 4;
+                        val.pData.Int = std::stoi(valStrings[i]);
+                        break;
                     }
-                    memcpy(&val.pData, valStrings[i].c_str(), val.len);
-                    break;
-                }
-                default:
-                    break;
+                    case AttrType::FLOAT:
+                    {
+                        val.type = AttrType::FLOAT;
+                        val.len = 4;
+                        val.pData.Float = std::stof(valStrings[i]);
+                        break;
+                    }
+                    case AttrType::VARCHAR:
+                    {
+                        val.type = AttrType::VARCHAR;
+                        val.len = valStrings.size();
+                        if (val.len >= allTypeLens[i])
+                        {
+                            std::cout << "WARNING: Too long VARCHAR at: " << lor << std::endl;
+                            val.len = allTypeLens[i];
+                        }
+                        memcpy(&val.pData, valStrings[i].c_str(), val.len);
+                        break;
+                    }
+                    default:
+                        break;
+                    }
                 }
                 values.push_back(val);
             }

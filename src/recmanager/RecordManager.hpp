@@ -28,7 +28,7 @@ public:
         bpm = nullptr;
     }
 
-    bool CreateFile(const std::string filename, int slotSize)
+    bool createFile(const std::string filename, int slotSize)
     {
         fm->createFile(filename.c_str());
         int fileID;
@@ -49,12 +49,12 @@ public:
         fm->closeFile(fileID);
         return true;
     }
-    bool DestroyFile(const std::string filename)
+    bool destroyFile(const std::string filename)
     {
         remove(filename.c_str());
         return true;
     }
-    bool OpenFile(const std::string filename, FileHandle &fileHandle)
+    bool openFile(const std::string filename, FileHandle &fileHandle)
     {
         auto it = openedMap.find(filename);
         if (it != openedMap.end())
@@ -65,7 +65,7 @@ public:
         fileHandle = FileHandle(fileID, bpm);
         return true;
     }
-    bool CloseFile(const std::string filename)
+    bool closeFile(const std::string filename)
     {
         auto it = openedMap.find(filename);
         if (it == openedMap.end())

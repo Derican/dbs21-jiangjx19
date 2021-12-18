@@ -249,7 +249,7 @@ public:
         std::string tableName = ctx->Identifier()->getText();
         std::vector<AttrInfo> attrs;
         PrimaryKey prims;
-        ForeignKey forns;
+        std::vector<ForeignKey> forns;
         for (auto field : ctx->field_list()->field())
         {
             if (auto normal = dynamic_cast<SQLParser::Normal_fieldContext *>(field))
@@ -288,9 +288,7 @@ public:
             else if (auto primary = dynamic_cast<SQLParser::Primary_key_fieldContext *>(field))
             {
                 if (primary->Identifier())
-                    prims.relName = primary->Identifier()->getText();
-                else
-                    prims.relName = tableName;
+                    prims.name = primary->Identifier()->getText();
                 for (auto ident : primary->identifiers()->Identifier())
                 {
                     std::string p_name = ident->getText();
@@ -299,31 +297,35 @@ public:
             }
             else if (auto foreign = dynamic_cast<SQLParser::Foreign_key_fieldContext *>(field))
             {
+                ForeignKey forn;
                 if (foreign->Identifier().size() == 1)
                 {
-                    forns.ref = foreign->Identifier(0)->getText();
+                    forn.ref = foreign->Identifier(0)->getText();
                 }
                 else
                 {
-                    forns.relName = foreign->Identifier(0)->getText();
-                    forns.ref = foreign->Identifier(1)->getText();
+                    forn.name = foreign->Identifier(0)->getText();
+                    forn.ref = foreign->Identifier(1)->getText();
                 }
                 for (auto ident : foreign->identifiers(0)->Identifier())
                 {
                     std::string a_name = ident->getText();
-                    forns.attrs.push_back(a_name);
+                    forn.attrs.push_back(a_name);
                 }
                 for (auto ident : foreign->identifiers(1)->Identifier())
                 {
                     std::string a_name = ident->getText();
-                    forns.refAttrs.push_back(a_name);
+                    forn.refAttrs.push_back(a_name);
                 }
+                forns.push_back(forn);
             }
         }
         if (sm->createTable(tableName, attrs))
         {
             if (prims.keys.size() > 0)
-                sm->createIndex(prims.relName, prims.keys, true);
+                sm->createIndex(tableName, prims.keys, true, prims.name);
+            for (auto forn : forns)
+                sm->createForeign(tableName, forn.attrs, forn.ref, forn.refAttrs, forn.name);
         }
 
         antlrcpp::Any res;
@@ -521,8 +523,69 @@ public:
     antlrcpp::Any visitAlter_table_drop_pk(SQLParser::Alter_table_drop_pkContext *ctx)
     {
         std::string tableName = ctx->Identifier(0)->getText();
+        std::string indexName = "";
+        if (ctx->Identifier(1))
+            indexName = ctx->Identifier(1)->getText();
 
-        sm->dropPrimaryKey(tableName);
+        sm->dropPrimaryKey(tableName, indexName);
+
+        antlrcpp::Any res;
+        return res;
+    }
+
+    antlrcpp::Any visitAlter_table_drop_foreign_key(SQLParser::Alter_table_drop_foreign_keyContext *ctx) override
+    {
+        std::string tableName = ctx->Identifier(0)->getText();
+        std::string foreignName = ctx->Identifier(1)->getText();
+
+        sm->dropForeign(tableName, foreignName);
+        antlrcpp::Any res;
+        return res;
+    }
+
+    antlrcpp::Any visitAlter_table_add_pk(SQLParser::Alter_table_add_pkContext *ctx) override
+    {
+        std::string tableName = ctx->Identifier(0)->getText();
+        std::vector<std::string> attrName;
+        for (auto idt : ctx->identifiers()->Identifier())
+            attrName.push_back(idt->getText());
+
+        sm->createIndex(tableName, attrName, true);
+        antlrcpp::Any res;
+        return res;
+    }
+
+    antlrcpp::Any visitAlter_table_add_foreign_key(SQLParser::Alter_table_add_foreign_keyContext *ctx) override
+    {
+        std::string tableName = ctx->Identifier(0)->getText();
+        ForeignKey forn;
+        forn.name = ctx->Identifier(1)->getText();
+        forn.ref = ctx->Identifier(2)->getText();
+        for (auto ident : ctx->identifiers(0)->Identifier())
+        {
+            std::string a_name = ident->getText();
+            forn.attrs.push_back(a_name);
+        }
+        for (auto ident : ctx->identifiers(1)->Identifier())
+        {
+            std::string a_name = ident->getText();
+            forn.refAttrs.push_back(a_name);
+        }
+
+        sm->createForeign(tableName, forn.attrs, forn.ref, forn.refAttrs, forn.name);
+        antlrcpp::Any res;
+        return res;
+    }
+
+    antlrcpp::Any visitAlter_table_add_unique(SQLParser::Alter_table_add_uniqueContext *ctx) override
+    {
+        std::string tableName = ctx->Identifier()->getText();
+
+        std::vector<std::string> attrName;
+        for (auto attr : ctx->identifiers()->Identifier())
+            attrName.push_back(attr->getText());
+
+        sm->createUnique(tableName, attrName);
 
         antlrcpp::Any res;
         return res;

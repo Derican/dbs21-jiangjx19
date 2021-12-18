@@ -8,6 +8,7 @@
 #define RELNAME_MAX_BYTES 100
 #define ATTRNAME_MAX_BYTES 100
 #define VARCHAR_MAX_BYTES 100
+#define IXNAMECHAR_MAX_BYTES 100
 
 enum AttrType
 {

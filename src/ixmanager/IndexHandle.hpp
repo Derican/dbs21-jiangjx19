@@ -98,6 +98,7 @@ public:
         int pID = ih.rootPage;
         if (pID <= 0)
         {
+            return false;
         }
         TreeNode *node = new TreeNode();
         loadTreeNode(pID, node);
@@ -111,8 +112,12 @@ public:
             loadTreeNode(pID, node);
         }
         node->deleteKeyEntry(key, rid);
+        saveTreeNode(pID, node);
         if (node->keys.size() >= MIN_KEYS)
+        {
+            delete node;
             return true;
+        }
 
         if (borrowKeyEntry(pID, node, false))
         {
@@ -153,6 +158,7 @@ public:
             return true;
         }
 
+        delete node;
         return false;
     }
 
@@ -238,6 +244,13 @@ public:
         bpm->markDirty(index);
         bpm->writeBack(index);
         return true;
+    }
+
+    bool searchEntry(const std::vector<int> &key)
+    {
+        int pID = ih.rootPage;
+        int pageID, slotID;
+        return searchEntry(pID, key, pageID, slotID);
     }
 
     bool searchEntry(const int pID, const std::vector<int> &key, int &pageID, int &slotID)
