@@ -129,6 +129,9 @@ public:
                 return true;
             }
         }
+        getNewPage(pageID);
+        rid.setPageID(pageID);
+        rid.setSlotID(0);
         return false;
     }
     bool getNewPage(int &pageID)

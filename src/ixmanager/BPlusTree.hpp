@@ -122,7 +122,7 @@ public:
             return false;
         }
         keys.insert(keys.begin() + index, e);
-        children.insert(children.begin() + index, child);
+        children.insert(children.begin() + index + 1, child);
         return true;
     }
 

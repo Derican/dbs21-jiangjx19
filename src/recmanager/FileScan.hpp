@@ -74,6 +74,7 @@ public:
                     return true;
                 }
             }
+            slotID = 0;
         }
         return false;
     }

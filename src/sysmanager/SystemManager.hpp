@@ -320,16 +320,7 @@ public:
         rm->closeFile(openedDbName + "/" + tableName + ".ref");
         for (auto reft : reffedTables)
         {
-            rm->openFile(openedDbName + "/" + reft + ".foreign", hd);
-            scan.openScan(hd, AttrType::VARCHAR, RELNAME_MAX_BYTES, 0, CompOp::E, value);
-            while (scan.getNextRec(rec))
-            {
-                rec.getRID(rid);
-                hd.deleteRec(rid);
-            }
-            scan.closeScan();
-            rm->closeFile(openedDbName + "/" + reft + ".foreign");
-            rm->destroyFile(openedDbName + "/" + reft + "." + tableName);
+            dropTable(reft);
         }
         rm->destroyFile(openedDbName + "/" + tableName + ".ref");
 

@@ -76,20 +76,21 @@ public:
             loadTreeNode(pID, node);
         }
         node->insertKeyEntry(key, rid);
+        saveTreeNode(pID, node);
+
         if (node->keys.size() > MAX_KEYS)
             splitLeafNode(node, pID);
-        saveTreeNode(pID, node);
         return true;
     }
 
     bool insertChildren(const std::vector<int> &child, int leftChildPID, int rightChildPID, TreeNode *node, int pID)
     {
         node->insertKeyChild(child, rightChildPID);
+        saveTreeNode(pID, node);
 
         if (node->keys.size() > MAX_KEYS)
             splitInternalNode(node, pID);
 
-        saveTreeNode(pID, node);
         return true;
     }
 
@@ -113,6 +114,7 @@ public:
         }
         node->deleteKeyEntry(key, rid);
         saveTreeNode(pID, node);
+
         if (node->keys.size() >= MIN_KEYS)
         {
             delete node;
@@ -142,18 +144,30 @@ public:
             deleteKey(node->header.parent, p, deleted_child);
             saveTreeNode(node->header.parent, p);
             delete p;
+
+            if (ih.rootPage == pID)
+                node->header.parent = -1;
+            saveTreeNode(pID, node);
             delete node;
             return true;
         }
 
         if (mergeEntry(pID, node, true))
         {
-            saveTreeNode(pID, node);
             TreeNode *p = new TreeNode();
             loadTreeNode(node->header.parent, p);
             deleteKey(node->header.parent, p, pID);
             saveTreeNode(node->header.parent, p);
             delete p;
+
+            if (ih.rootPage == node->header.rightSibling)
+            {
+                TreeNode *r = new TreeNode();
+                loadTreeNode(node->header.rightSibling, r);
+                r->header.parent = -1;
+                saveTreeNode(node->header.rightSibling, r);
+                delete r;
+            }
             delete node;
             return true;
         }
@@ -185,39 +199,45 @@ public:
         if (borrowKeyChild(pID, node, false))
         {
             saveTreeNode(pID, node);
-            delete node;
             return true;
         }
 
         if (borrowKeyChild(pID, node, true))
         {
             saveTreeNode(pID, node);
-            delete node;
             return true;
         }
 
         int deleted_child = node->header.leftSibling;
         if (mergeChild(pID, node, false))
         {
-            saveTreeNode(pID, node);
             TreeNode *p = new TreeNode();
             loadTreeNode(node->header.parent, p);
             deleteKey(node->header.parent, p, deleted_child);
             saveTreeNode(node->header.parent, p);
             delete p;
-            delete node;
+
+            if (ih.rootPage == pID)
+                node->header.parent = -1;
             return true;
         }
 
         if (mergeChild(pID, node, true))
         {
-            saveTreeNode(pID, node);
             TreeNode *p = new TreeNode();
             loadTreeNode(node->header.parent, p);
             deleteKey(node->header.parent, p, pID);
             saveTreeNode(node->header.parent, p);
             delete p;
-            delete node;
+
+            if (ih.rootPage == node->header.rightSibling)
+            {
+                TreeNode *r = new TreeNode();
+                loadTreeNode(node->header.rightSibling, r);
+                r->header.parent = -1;
+                saveTreeNode(node->header.rightSibling, r);
+                delete r;
+            }
             return true;
         }
 
@@ -466,11 +486,11 @@ public:
         TreeNode *surrogateNode = new TreeNode();
         surrogateNode->header.type = NodeType::INTERNAL;
         surrogateNode->header.rightSibling = node->header.rightSibling;
-        for (auto i = MIN_KEYS; i < MAX_KEYS; i++)
+        for (auto i = MIN_KEYS + 1; i <= MAX_KEYS; i++)
         {
             surrogateNode->keys.push_back(node->keys[i]);
         }
-        for (auto i = MIN_KEYS; i <= MAX_KEYS; i++)
+        for (auto i = MIN_KEYS + 1; i <= MAX_KEYS + 1; i++)
         {
             surrogateNode->children.push_back(node->children[i]);
 
@@ -480,6 +500,7 @@ public:
             saveTreeNode(node->children[i], childNode);
             delete childNode;
         }
+        std::vector<int> carryKey = node->keys[MIN_KEYS];
         node->keys.resize(MIN_KEYS);
         node->children.resize(MIN_KEYS + 1);
 
@@ -501,7 +522,7 @@ public:
 
             TreeNode *parentNode = new TreeNode();
             loadTreeNode(node->header.parent, parentNode);
-            insertChildren(surrogateNode->keys.front(), pID, surrogatePID, parentNode, node->header.parent);
+            insertChildren(carryKey, pID, surrogatePID, parentNode, node->header.parent);
             delete parentNode;
         }
         else
@@ -518,7 +539,7 @@ public:
             surrogateNode->header.parent = parentPID;
             node->header.parent = parentPID;
 
-            parent->keys.push_back(surrogateNode->keys.front());
+            parent->keys.push_back(carryKey);
             parent->children.push_back(pID);
             parent->children.push_back(surrogatePID);
 
@@ -600,10 +621,16 @@ public:
             TreeNode *p = new TreeNode();
             loadTreeNode(node->header.parent, p);
             int index;
-            p->searchChild(lenderNode->keys[0], index);
+            p->searchChild(pID, index);
 
             node->keys.push_back(p->keys[index]);
             node->children.push_back(lenderNode->children[0]);
+
+            TreeNode *childNode = new TreeNode();
+            loadTreeNode(lenderNode->children[0], childNode);
+            childNode->header.parent = pID;
+            saveTreeNode(lenderNode->children[0], childNode);
+            delete childNode;
 
             changeParentChild(p, p->keys[index], lenderNode->keys[0]);
 
@@ -618,10 +645,16 @@ public:
             TreeNode *p = new TreeNode();
             loadTreeNode(node->header.parent, p);
             int index;
-            p->searchChild(node->keys[0], index);
+            p->searchChild(lenderPID, index);
 
             node->keys.insert(node->keys.begin(), p->keys[index]);
             node->children.insert(node->children.begin(), lenderNode->children.back());
+
+            TreeNode *childNode = new TreeNode();
+            loadTreeNode(lenderNode->children.back(), childNode);
+            childNode->header.parent = pID;
+            saveTreeNode(lenderNode->children.back(), childNode);
+            delete childNode;
 
             changeParentChild(p, p->keys[index], lenderNode->keys.back());
 
@@ -723,6 +756,15 @@ public:
             siblingNode->keys.insert(siblingNode->keys.begin(), node->keys.begin(), node->keys.end());
             siblingNode->children.insert(siblingNode->children.begin(), node->children.begin(), node->children.end());
 
+            for (auto childPID : node->children)
+            {
+                TreeNode *c = new TreeNode();
+                loadTreeNode(childPID, c);
+                c->header.parent = siblingPID;
+                saveTreeNode(childPID, c);
+                delete c;
+            }
+
             siblingNode->header.leftSibling = node->header.leftSibling;
             if (node->header.leftSibling > 0)
             {
@@ -737,7 +779,16 @@ public:
         {
             node->keys.insert(node->keys.begin(), p->keys[index]);
             node->keys.insert(node->keys.begin(), siblingNode->keys.begin(), siblingNode->keys.end());
-            node->entries.insert(node->entries.begin(), siblingNode->entries.begin(), siblingNode->entries.end());
+            node->children.insert(node->children.begin(), siblingNode->children.begin(), siblingNode->children.end());
+
+            for (auto childPID : siblingNode->children)
+            {
+                TreeNode *c = new TreeNode();
+                loadTreeNode(childPID, c);
+                c->header.parent = pID;
+                saveTreeNode(childPID, c);
+                delete c;
+            }
 
             node->header.leftSibling = siblingNode->header.leftSibling;
             if (siblingNode->header.leftSibling > 0)
