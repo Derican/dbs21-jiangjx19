@@ -1566,6 +1566,7 @@ public:
                     int *val = new int;
                     memcpy(val, rec + offsets[i], sizeof(int));
                     std::cout << *val;
+                    delete val;
                     break;
                 }
                 case AttrType::FLOAT:
@@ -1573,12 +1574,12 @@ public:
                     float *val = new float;
                     memcpy(val, rec + offsets[i], sizeof(float));
                     std::cout << *val;
+                    delete val;
                     break;
                 }
                 case AttrType::VARCHAR:
                 {
-                    char *val = new char[typeLens[i]];
-                    memcpy(val, rec + offsets[i], typeLens[i]);
+                    std::string val(rec + offsets[i], typeLens[i]);
                     std::cout << val;
                     break;
                 }
@@ -1745,8 +1746,8 @@ public:
                     case AttrType::VARCHAR:
                     {
                         val.type = AttrType::VARCHAR;
-                        val.len = valStrings.size();
-                        if (val.len >= allTypeLens[i])
+                        val.len = valStrings[i].size();
+                        if (val.len > allTypeLens[i])
                         {
                             std::cout << "WARNING: Too long VARCHAR at: " << lor << std::endl;
                             val.len = allTypeLens[i];

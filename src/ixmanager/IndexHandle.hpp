@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+#include <map>
 #include <memory.h>
 #include "../recmanager/RID.hpp"
 #include "constants.h"
@@ -13,6 +15,7 @@ private:
     int fileID;
     BufPageManager *bpm;
     IndexHeader ih;
+    std::map<int, std::shared_ptr<TreeNode>> nodesMap;
 
 public:
     IndexHandle() {}
@@ -51,45 +54,46 @@ public:
     bool insertEntry(const std::vector<int> &key, const RID &rid)
     {
         int pID = ih.rootPage;
-        TreeNode *node = new TreeNode();
         if (pID <= 0)
         {
+            std::shared_ptr<TreeNode> node(new TreeNode());
             getNewPage(pID);
             ih.height = 1;
             ih.rootPage = pID;
             saveIndexHeader();
+            node->header.pageID = pID;
             node->header.leftSibling = -1;
             node->header.num_keys = 0;
             node->header.parent = -1;
             node->header.rightSibling = -1;
             node->header.type = NodeType::LEAF;
+            saveTreeNode(pID, node);
         }
-        else
-            loadTreeNode(pID, node);
+
+        std::shared_ptr<TreeNode> node;
+        loadTreeNode(pID, node);
         int index;
         while (node->header.type != NodeType::LEAF)
         {
             node->searchChild(key, index);
             pID = node->children[index];
-            delete node;
-            node = new TreeNode();
             loadTreeNode(pID, node);
         }
         node->insertKeyEntry(key, rid);
         saveTreeNode(pID, node);
 
         if (node->keys.size() > MAX_KEYS)
-            splitLeafNode(node, pID);
+            splitLeafNode(node);
         return true;
     }
 
-    bool insertChildren(const std::vector<int> &child, int leftChildPID, int rightChildPID, TreeNode *node, int pID)
+    bool insertChildren(const std::vector<int> &child, int leftChildPID, int rightChildPID, std::shared_ptr<TreeNode> node, int pID)
     {
         node->insertKeyChild(child, rightChildPID);
         saveTreeNode(pID, node);
 
         if (node->keys.size() > MAX_KEYS)
-            splitInternalNode(node, pID);
+            splitInternalNode(node);
 
         return true;
     }
@@ -101,83 +105,71 @@ public:
         {
             return false;
         }
-        TreeNode *node = new TreeNode();
+        std::shared_ptr<TreeNode> node;
         loadTreeNode(pID, node);
         int index;
         while (node->header.type != NodeType::LEAF)
         {
             node->searchChild(key, index);
             pID = node->children[index];
-            delete node;
-            node = new TreeNode();
             loadTreeNode(pID, node);
         }
         node->deleteKeyEntry(key, rid);
         saveTreeNode(pID, node);
 
-        if (node->keys.size() >= MIN_KEYS)
+        if (node->keys.size() >= MIN_KEYS || pID == ih.rootPage)
+            return true;
+
+        if (borrowKeyEntry(node, false))
         {
-            delete node;
+            saveTreeNode(pID, node);
             return true;
         }
 
-        if (borrowKeyEntry(pID, node, false))
+        if (borrowKeyEntry(node, true))
         {
             saveTreeNode(pID, node);
-            delete node;
-            return true;
-        }
-
-        if (borrowKeyEntry(pID, node, true))
-        {
-            saveTreeNode(pID, node);
-            delete node;
             return true;
         }
 
         int deleted_child = node->header.leftSibling;
-        if (mergeEntry(pID, node, false))
+        if (mergeEntry(node, false))
         {
             saveTreeNode(pID, node);
-            TreeNode *p = new TreeNode();
+            std::shared_ptr<TreeNode> p;
             loadTreeNode(node->header.parent, p);
-            deleteKey(node->header.parent, p, deleted_child);
+            deleteKey(p, deleted_child);
             saveTreeNode(node->header.parent, p);
-            delete p;
 
             if (ih.rootPage == pID)
                 node->header.parent = -1;
             saveTreeNode(pID, node);
-            delete node;
             return true;
         }
 
-        if (mergeEntry(pID, node, true))
+        if (mergeEntry(node, true))
         {
-            TreeNode *p = new TreeNode();
+            std::shared_ptr<TreeNode> p;
             loadTreeNode(node->header.parent, p);
-            deleteKey(node->header.parent, p, pID);
+            deleteKey(p, pID);
             saveTreeNode(node->header.parent, p);
-            delete p;
 
             if (ih.rootPage == node->header.rightSibling)
             {
-                TreeNode *r = new TreeNode();
+                std::shared_ptr<TreeNode> r;
                 loadTreeNode(node->header.rightSibling, r);
                 r->header.parent = -1;
                 saveTreeNode(node->header.rightSibling, r);
-                delete r;
             }
-            delete node;
             return true;
         }
 
-        delete node;
         return false;
     }
 
-    bool deleteKey(int pID, TreeNode *node, int child)
+    bool deleteKey(std::shared_ptr<TreeNode> node, int child)
     {
+        int pID = node->header.pageID;
         int index;
         bool found = node->searchChild(child, index);
         assert(found);
@@ -196,47 +188,44 @@ public:
         if (node->keys.size() >= MIN_KEYS)
             return true;
 
-        if (borrowKeyChild(pID, node, false))
+        if (borrowKeyChild(node, false))
         {
             saveTreeNode(pID, node);
             return true;
         }
 
-        if (borrowKeyChild(pID, node, true))
+        if (borrowKeyChild(node, true))
         {
             saveTreeNode(pID, node);
             return true;
         }
 
         int deleted_child = node->header.leftSibling;
-        if (mergeChild(pID, node, false))
+        if (mergeChild(node, false))
         {
-            TreeNode *p = new TreeNode();
+            std::shared_ptr<TreeNode> p;
             loadTreeNode(node->header.parent, p);
-            deleteKey(node->header.parent, p, deleted_child);
+            deleteKey(p, deleted_child);
             saveTreeNode(node->header.parent, p);
-            delete p;
 
             if (ih.rootPage == pID)
                 node->header.parent = -1;
             return true;
         }
 
-        if (mergeChild(pID, node, true))
+        if (mergeChild(node, true))
         {
-            TreeNode *p = new TreeNode();
+            std::shared_ptr<TreeNode> p;
             loadTreeNode(node->header.parent, p);
-            deleteKey(node->header.parent, p, pID);
+            deleteKey(p, pID);
             saveTreeNode(node->header.parent, p);
-            delete p;
 
             if (ih.rootPage == node->header.rightSibling)
             {
-                TreeNode *r = new TreeNode();
+                std::shared_ptr<TreeNode> r;
                 loadTreeNode(node->header.rightSibling, r);
                 r->header.parent = -1;
                 saveTreeNode(node->header.rightSibling, r);
-                delete r;
             }
             return true;
         }
@@ -279,7 +268,7 @@ public:
             return false;
         else
         {
-            TreeNode *node = new TreeNode();
+            std::shared_ptr<TreeNode> node;
             loadTreeNode(pID, node);
             int index;
             bool found = node->searchChild(key, index);
@@ -299,21 +288,28 @@ public:
     bool getMostLeft(int &pageID)
     {
         int pID = ih.rootPage;
-        TreeNode *t = new TreeNode();
+        std::shared_ptr<TreeNode> t;
         loadTreeNode(pID, t);
         while (t->header.type == NodeType::INTERNAL)
         {
             pID = t->children[0];
-            delete t;
-            t = new TreeNode();
             loadTreeNode(pID, t);
         }
         pageID = pID;
         return true;
     }
 
-    bool loadTreeNode(const int pID, TreeNode *&node)
+    bool loadTreeNode(const int pID, std::shared_ptr<TreeNode> &node)
     {
+        auto it = nodesMap.find(pID);
+        if (it != nodesMap.end() && it->second.use_count() != 0)
+        {
+            node = it->second;
+            return true;
+        }
+        node = std::shared_ptr<TreeNode>(new TreeNode());
+        nodesMap[pID] = node;
+
         int index;
         BufType b = bpm->getPage(fileID, pID, index);
         DataType d = reinterpret_cast<DataType>(b);
@@ -321,7 +317,7 @@ public:
         memcpy(&node->header, d, sizeof(NodeHeader));
         if (node->header.type == NodeType::INTERNAL)
         {
-            for (auto i = 0; i <= node->header.num_keys; i++)
+            for (auto i = 0; i <= node->header.num_keys && node->header.num_keys > 0; i++)
             {
                 int child;
                 memcpy(&child, &d[sizeof(NodeHeader) + i * (4 + 4 * ih.num_attrs)], 4);
@@ -343,7 +339,7 @@ public:
         }
         else
         {
-            for (auto i = 0; i < node->header.num_keys; i++)
+            for (auto i = 0; i < node->header.num_keys && node->header.num_keys > 0; i++)
             {
                 RID entry;
                 memcpy(&entry, &d[sizeof(NodeHeader) + i * (sizeof(RID) + 4 * ih.num_attrs)], sizeof(RID));
@@ -363,7 +359,7 @@ public:
         return true;
     }
 
-    bool saveTreeNode(const int pID, TreeNode *node)
+    bool saveTreeNode(const int pID, std::shared_ptr<TreeNode> node)
     {
         int index;
         BufType b = bpm->getPage(fileID, pID, index);
@@ -373,7 +369,7 @@ public:
         memcpy(d, &node->header, sizeof(NodeHeader));
         if (node->header.type == NodeType::INTERNAL)
         {
-            for (auto i = 0; i <= node->header.num_keys; i++)
+            for (auto i = 0; i <= node->header.num_keys && node->header.num_keys > 0; i++)
             {
                 memcpy(&d[sizeof(NodeHeader) + i * (4 + 4 * ih.num_attrs)], &node->children[i], 4);
 
@@ -385,7 +381,7 @@ public:
         }
         else
         {
-            for (auto i = 0; i < node->header.num_keys; i++)
+            for (auto i = 0; i < node->header.num_keys && node->header.num_keys > 0; i++)
             {
                 memcpy(&d[sizeof(NodeHeader) + i * (sizeof(RID) + 4 * ih.num_attrs)], &node->entries[i], sizeof(RID));
 
@@ -412,13 +408,19 @@ public:
         return true;
     }
 
-    bool splitLeafNode(TreeNode *node, int pID)
+    bool splitLeafNode(std::shared_ptr<TreeNode> node)
     {
+        int pID = node->header.pageID;
         int surrogatePID;
         getNewPage(surrogatePID);
 
-        TreeNode *surrogateNode = new TreeNode();
+        std::shared_ptr<TreeNode> surrogateNode(new TreeNode());
+        saveTreeNode(surrogatePID, surrogateNode);
+        surrogateNode.reset();
+        loadTreeNode(surrogatePID, surrogateNode);
+
         surrogateNode->header.type = NodeType::LEAF;
+        surrogateNode->header.pageID = surrogatePID;
         surrogateNode->header.leftSibling = pID;
         surrogateNode->header.rightSibling = node->header.rightSibling;
         surrogateNode->keys.insert(surrogateNode->keys.end(), node->keys.begin() + MIN_KEYS, node->keys.end());
@@ -428,11 +430,10 @@ public:
 
         if (node->header.rightSibling > 0)
         {
-            TreeNode *tmp = new TreeNode();
+            std::shared_ptr<TreeNode> tmp;
             loadTreeNode(node->header.rightSibling, tmp);
             tmp->header.leftSibling = surrogatePID;
             saveTreeNode(node->header.rightSibling, tmp);
-            delete tmp;
         }
         node->header.rightSibling = surrogatePID;
 
@@ -442,16 +443,16 @@ public:
             saveTreeNode(surrogatePID, surrogateNode);
             saveTreeNode(pID, node);
 
-            TreeNode *parentNode = new TreeNode();
+            std::shared_ptr<TreeNode> parentNode;
             loadTreeNode(node->header.parent, parentNode);
             insertChildren(surrogateNode->keys.front(), pID, surrogatePID, parentNode, node->header.parent);
-            delete parentNode;
         }
         else
         {
             int parentPID;
             getNewPage(parentPID);
-            TreeNode *parent = new TreeNode();
+            std::shared_ptr<TreeNode> parent(new TreeNode());
+            parent->header.pageID = parentPID;
             parent->header.num_keys = 1;
             parent->header.parent = -1;
             parent->header.leftSibling = -1;
@@ -472,19 +473,23 @@ public:
             ih.height++;
             ih.rootPage = parentPID;
             saveIndexHeader();
-            delete parent;
         }
-        delete surrogateNode;
         return true;
     }
 
-    bool splitInternalNode(TreeNode *node, int pID)
+    bool splitInternalNode(std::shared_ptr<TreeNode> node)
     {
+        int pID = node->header.pageID;
         int surrogatePID;
         getNewPage(surrogatePID);
 
-        TreeNode *surrogateNode = new TreeNode();
+        std::shared_ptr<TreeNode> surrogateNode(new TreeNode());
+        saveTreeNode(surrogatePID, surrogateNode);
+        surrogateNode.reset();
+        loadTreeNode(surrogatePID, surrogateNode);
+
         surrogateNode->header.type = NodeType::INTERNAL;
+        surrogateNode->header.pageID = surrogatePID;
         surrogateNode->header.rightSibling = node->header.rightSibling;
         for (auto i = MIN_KEYS + 1; i <= MAX_KEYS; i++)
         {
@@ -494,11 +499,10 @@ public:
         {
             surrogateNode->children.push_back(node->children[i]);
 
-            TreeNode *childNode = new TreeNode();
+            std::shared_ptr<TreeNode> childNode;
             loadTreeNode(node->children[i], childNode);
             childNode->header.parent = surrogatePID;
             saveTreeNode(node->children[i], childNode);
-            delete childNode;
         }
         std::vector<int> carryKey = node->keys[MIN_KEYS];
         node->keys.resize(MIN_KEYS);
@@ -506,11 +510,10 @@ public:
 
         if (node->header.rightSibling > 0)
         {
-            TreeNode *tmp = new TreeNode();
+            std::shared_ptr<TreeNode> tmp;
             loadTreeNode(node->header.rightSibling, tmp);
             tmp->header.leftSibling = surrogatePID;
             saveTreeNode(node->header.rightSibling, tmp);
-            delete tmp;
         }
         node->header.rightSibling = surrogatePID;
 
@@ -520,16 +523,16 @@ public:
             saveTreeNode(surrogatePID, surrogateNode);
             saveTreeNode(pID, node);
 
-            TreeNode *parentNode = new TreeNode();
+            std::shared_ptr<TreeNode> parentNode;
             loadTreeNode(node->header.parent, parentNode);
             insertChildren(carryKey, pID, surrogatePID, parentNode, node->header.parent);
-            delete parentNode;
         }
         else
         {
             int parentPID;
             getNewPage(parentPID);
-            TreeNode *parent = new TreeNode();
+            std::shared_ptr<TreeNode> parent(new TreeNode());
+            parent->header.pageID = parentPID;
             parent->header.num_keys = 1;
             parent->header.parent = -1;
             parent->header.leftSibling = -1;
@@ -550,18 +553,17 @@ public:
             ih.height++;
             ih.rootPage = parentPID;
             saveIndexHeader();
-            delete parent;
         }
-        delete surrogateNode;
         return true;
     }
 
-    bool borrowKeyEntry(int pID, TreeNode *node, bool fromRight)
+    bool borrowKeyEntry(std::shared_ptr<TreeNode> node, bool fromRight)
     {
+        int pID = node->header.pageID;
         int lenderPID = fromRight ? node->header.rightSibling : node->header.leftSibling;
         if (lenderPID <= 0)
             return false;
-        TreeNode *lenderNode = new TreeNode;
+        std::shared_ptr<TreeNode> lenderNode;
         loadTreeNode(lenderPID, lenderNode);
 
         assert(lenderNode->keys.size() >= MIN_KEYS && lenderNode->keys.size() <= MAX_KEYS);
@@ -576,11 +578,10 @@ public:
             lenderNode->keys.erase(lenderNode->keys.begin());
             lenderNode->entries.erase(lenderNode->entries.begin());
 
-            TreeNode *p = new TreeNode();
+            std::shared_ptr<TreeNode> p;
             loadTreeNode(node->header.parent, p);
             changeParentChild(p, node->keys.back(), lenderNode->keys.front());
             saveTreeNode(node->header.parent, p);
-            delete p;
         }
         else
         {
@@ -590,26 +591,25 @@ public:
             lenderNode->keys.pop_back();
             lenderNode->entries.pop_back();
 
-            TreeNode *p = new TreeNode();
+            std::shared_ptr<TreeNode> p;
             loadTreeNode(lenderNode->header.parent, p);
             changeParentChild(p, lenderNode->keys.back(), node->keys.front());
             saveTreeNode(lenderNode->header.parent, p);
-            delete p;
         }
 
         saveTreeNode(pID, node);
         saveTreeNode(lenderPID, lenderNode);
 
-        delete lenderNode;
         return true;
     }
 
-    bool borrowKeyChild(int pID, TreeNode *node, bool fromRight)
+    bool borrowKeyChild(std::shared_ptr<TreeNode> node, bool fromRight)
     {
+        int pID = node->header.pageID;
         int lenderPID = fromRight ? node->header.rightSibling : node->header.leftSibling;
         if (lenderPID <= 0)
             return false;
-        TreeNode *lenderNode = new TreeNode;
+        std::shared_ptr<TreeNode> lenderNode;
         loadTreeNode(lenderPID, lenderNode);
 
         assert(lenderNode->keys.size() >= MIN_KEYS && lenderNode->keys.size() <= MAX_KEYS);
@@ -618,7 +618,7 @@ public:
             return false;
         if (fromRight)
         {
-            TreeNode *p = new TreeNode();
+            std::shared_ptr<TreeNode> p;
             loadTreeNode(node->header.parent, p);
             int index;
             p->searchChild(pID, index);
@@ -626,11 +626,10 @@ public:
             node->keys.push_back(p->keys[index]);
             node->children.push_back(lenderNode->children[0]);
 
-            TreeNode *childNode = new TreeNode();
+            std::shared_ptr<TreeNode> childNode;
             loadTreeNode(lenderNode->children[0], childNode);
             childNode->header.parent = pID;
             saveTreeNode(lenderNode->children[0], childNode);
-            delete childNode;
 
             changeParentChild(p, p->keys[index], lenderNode->keys[0]);
 
@@ -638,11 +637,10 @@ public:
             lenderNode->children.erase(lenderNode->children.begin());
 
             saveTreeNode(node->header.parent, p);
-            delete p;
         }
         else
         {
-            TreeNode *p = new TreeNode();
+            std::shared_ptr<TreeNode> p;
             loadTreeNode(node->header.parent, p);
             int index;
             p->searchChild(lenderPID, index);
@@ -650,11 +648,10 @@ public:
             node->keys.insert(node->keys.begin(), p->keys[index]);
             node->children.insert(node->children.begin(), lenderNode->children.back());
 
-            TreeNode *childNode = new TreeNode();
+            std::shared_ptr<TreeNode> childNode;
             loadTreeNode(lenderNode->children.back(), childNode);
             childNode->header.parent = pID;
             saveTreeNode(lenderNode->children.back(), childNode);
-            delete childNode;
 
             changeParentChild(p, p->keys[index], lenderNode->keys.back());
 
@@ -662,17 +659,15 @@ public:
             lenderNode->children.pop_back();
 
             saveTreeNode(node->header.parent, p);
-            delete p;
         }
 
         saveTreeNode(pID, node);
         saveTreeNode(lenderPID, lenderNode);
 
-        delete lenderNode;
         return true;
     }
 
-    bool changeParentChild(TreeNode *parent, const std::vector<int> &o, const std::vector<int> &n)
+    bool changeParentChild(std::shared_ptr<TreeNode> parent, const std::vector<int> &o, const std::vector<int> &n)
     {
         int index;
         bool found = parent->searchChild(o, index);
@@ -680,21 +675,21 @@ public:
         parent->keys[index - 1] = n;
         if (index == parent->keys.size() && parent->header.parent > 0)
         {
-            TreeNode *p = new TreeNode();
+            std::shared_ptr<TreeNode> p;
             loadTreeNode(parent->header.parent, p);
             changeParentChild(p, o, n);
             saveTreeNode(parent->header.parent, p);
-            delete p;
         }
         return true;
     }
 
-    bool mergeEntry(int pID, TreeNode *node, bool withRight)
+    bool mergeEntry(std::shared_ptr<TreeNode> node, bool withRight)
     {
+        int pID = node->header.pageID;
         int siblingPID = withRight ? node->header.rightSibling : node->header.leftSibling;
         if (siblingPID <= 0)
             return false;
-        TreeNode *siblingNode = new TreeNode();
+        std::shared_ptr<TreeNode> siblingNode;
         loadTreeNode(siblingPID, siblingNode);
         if (siblingNode->header.parent != node->header.parent)
             return false;
@@ -707,11 +702,10 @@ public:
             siblingNode->header.leftSibling = node->header.leftSibling;
             if (node->header.leftSibling > 0)
             {
-                TreeNode *l = new TreeNode();
+                std::shared_ptr<TreeNode> l;
                 loadTreeNode(node->header.leftSibling, l);
                 l->header.rightSibling = siblingPID;
                 saveTreeNode(node->header.leftSibling, l);
-                delete l;
             }
         }
         else
@@ -722,30 +716,29 @@ public:
             node->header.leftSibling = siblingNode->header.leftSibling;
             if (siblingNode->header.leftSibling > 0)
             {
-                TreeNode *ll = new TreeNode();
+                std::shared_ptr<TreeNode> ll;
                 loadTreeNode(siblingNode->header.leftSibling, ll);
                 ll->header.rightSibling = pID;
                 saveTreeNode(siblingNode->header.leftSibling, ll);
-                delete ll;
             }
         }
 
         saveTreeNode(siblingPID, siblingNode);
-        delete siblingNode;
         return true;
     }
 
-    bool mergeChild(int pID, TreeNode *node, bool withRight)
+    bool mergeChild(std::shared_ptr<TreeNode> node, bool withRight)
     {
+        int pID = node->header.pageID;
         int siblingPID = withRight ? node->header.rightSibling : node->header.leftSibling;
         if (siblingPID <= 0)
             return false;
-        TreeNode *siblingNode = new TreeNode();
+        std::shared_ptr<TreeNode> siblingNode;
         loadTreeNode(siblingPID, siblingNode);
         if (siblingNode->header.parent != node->header.parent)
             return false;
 
-        TreeNode *p = new TreeNode();
+        std::shared_ptr<TreeNode> p;
         loadTreeNode(node->header.parent, p);
         int index;
         bool found = p->searchChild(pID, index);
@@ -758,21 +751,19 @@ public:
 
             for (auto childPID : node->children)
             {
-                TreeNode *c = new TreeNode();
+                std::shared_ptr<TreeNode> c;
                 loadTreeNode(childPID, c);
                 c->header.parent = siblingPID;
                 saveTreeNode(childPID, c);
-                delete c;
             }
 
             siblingNode->header.leftSibling = node->header.leftSibling;
             if (node->header.leftSibling > 0)
             {
-                TreeNode *l = new TreeNode();
+                std::shared_ptr<TreeNode> l;
                 loadTreeNode(node->header.leftSibling, l);
                 l->header.rightSibling = siblingPID;
                 saveTreeNode(node->header.leftSibling, l);
-                delete l;
             }
         }
         else
@@ -783,26 +774,23 @@ public:
 
             for (auto childPID : siblingNode->children)
             {
-                TreeNode *c = new TreeNode();
+                std::shared_ptr<TreeNode> c;
                 loadTreeNode(childPID, c);
                 c->header.parent = pID;
                 saveTreeNode(childPID, c);
-                delete c;
             }
 
             node->header.leftSibling = siblingNode->header.leftSibling;
             if (siblingNode->header.leftSibling > 0)
             {
-                TreeNode *ll = new TreeNode();
+                std::shared_ptr<TreeNode> ll;
                 loadTreeNode(siblingNode->header.leftSibling, ll);
                 ll->header.rightSibling = pID;
                 saveTreeNode(siblingNode->header.leftSibling, ll);
-                delete ll;
             }
         }
 
         saveTreeNode(siblingPID, siblingNode);
-        delete siblingNode;
         return true;
     }
 };

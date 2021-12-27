@@ -13,7 +13,7 @@ private:
     CompOp op;
     std::vector<int> keys;
     int pageID, slotID;
-    TreeNode *curNode;
+    std::shared_ptr<TreeNode> curNode;
 
 public:
     IndexScan()
@@ -53,7 +53,7 @@ public:
 
         if (pageID > 0 && this->op == CompOp::G)
         {
-            TreeNode *tmp = new TreeNode();
+            std::shared_ptr<TreeNode> tmp;
             handle.loadTreeNode(pageID, tmp);
             while (tmp->keyCompare(tmp->keys[slotID], keys) != -1)
             {
@@ -62,15 +62,12 @@ public:
                 {
                     pageID = tmp->header.rightSibling;
                     slotID = 0;
-                    delete tmp;
-                    tmp = new TreeNode();
                     if (pageID > 0)
                         handle.loadTreeNode(pageID, tmp);
                     else
                         break;
                 }
             }
-            delete tmp;
         }
     }
 
@@ -80,7 +77,6 @@ public:
             return false;
         if (curNode == nullptr)
         {
-            curNode = new TreeNode();
             handle.loadTreeNode(pageID, curNode);
         }
         if (slotID == curNode->keys.size())
@@ -88,8 +84,6 @@ public:
             pageID = curNode->header.rightSibling;
             if (pageID <= 0)
                 return false;
-            delete curNode;
-            curNode = new TreeNode();
             handle.loadTreeNode(pageID, curNode);
             slotID = 0;
         }
@@ -144,6 +138,7 @@ public:
     bool closeScan()
     {
         if (curNode)
-            delete curNode;
+            curNode.reset();
+        return true;
     }
 };

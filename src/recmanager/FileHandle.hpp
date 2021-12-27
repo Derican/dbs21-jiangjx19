@@ -67,7 +67,7 @@ public:
         SlotMap slotMap(d, fh.capacity);
         slotMap.set(slotID);
         bpm->markDirty(index);
-        bpm->writeBack(index);
+        // bpm->writeBack(index);
         return true;
     }
     bool deleteRec(const RID &rid)
@@ -91,7 +91,7 @@ public:
         SlotMap slotMap(d, fh.capacity);
         slotMap.remove(slotID);
         bpm->markDirty(index);
-        bpm->writeBack(index);
+        // bpm->writeBack(index);
         return true;
     }
     bool updateRec(const Record &rec)
