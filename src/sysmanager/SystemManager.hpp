@@ -88,6 +88,9 @@ public:
         {
             std::string prefix = "rm -r ";
             system((prefix + dbName).c_str());
+
+            if (dbOpened && dbName == openedDbName)
+                closeDb();
             return true;
         }
         else

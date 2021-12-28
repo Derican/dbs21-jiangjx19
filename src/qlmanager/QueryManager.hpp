@@ -1579,8 +1579,11 @@ public:
                 }
                 case AttrType::VARCHAR:
                 {
-                    std::string val(rec + offsets[i], typeLens[i]);
+                    char *val = new char[typeLens[i] + 1];
+                    memset(val, 0, typeLens[i] + 1);
+                    memcpy(val, rec + offsets[i], typeLens[i]);
                     std::cout << val;
+                    delete[] val;
                     break;
                 }
                 default:
@@ -1638,6 +1641,7 @@ public:
                 }
             }
         }
+        return true;
     }
     bool updateRecordData(DataType tmp, std::vector<std::string> &allAttrName, std::vector<bool> &nulls, std::vector<int> &allOffsets, std::vector<AttrType> &allTypes, std::vector<int> &allTypeLens, std::vector<Condition> sets)
     {
