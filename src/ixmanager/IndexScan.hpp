@@ -47,6 +47,12 @@ public:
         case CompOp::E:
             handle.searchEntry(ih.rootPage, keys, pageID, slotID);
             break;
+        case CompOp::BETWEEN:
+        case CompOp::BETWEENL:
+        case CompOp::BETWEENR:
+        case CompOp::BETWEENLR:
+            handle.searchEntry(ih.rootPage, std::vector<int>(keys.begin(), keys.begin() + ih.num_attrs), pageID, slotID);
+            break;
         default:
             break;
         }
@@ -56,6 +62,24 @@ public:
             std::shared_ptr<TreeNode> tmp;
             handle.loadTreeNode(pageID, tmp);
             while (tmp->keyCompare(tmp->keys[slotID], keys) != -1)
+            {
+                slotID++;
+                if (slotID == tmp->keys.size())
+                {
+                    pageID = tmp->header.rightSibling;
+                    slotID = 0;
+                    if (pageID > 0)
+                        handle.loadTreeNode(pageID, tmp);
+                    else
+                        break;
+                }
+            }
+        }
+        if (pageID > 0 && (this->op == CompOp::BETWEEN || this->op == CompOp::BETWEENR))
+        {
+            std::shared_ptr<TreeNode> tmp;
+            handle.loadTreeNode(pageID, tmp);
+            while (tmp->keyCompare(tmp->keys[slotID], std::vector<int>(keys.begin(), keys.begin() + ih.num_attrs)) != -1)
             {
                 slotID++;
                 if (slotID == tmp->keys.size())
@@ -123,6 +147,24 @@ public:
             break;
         case CompOp::E:
             if (curNode->keyCompare(curNode->keys[slotID], keys) == 0)
+            {
+                rid = curNode->entries[slotID];
+                slotID++;
+                return true;
+            }
+            break;
+        case CompOp::BETWEEN:
+        case CompOp::BETWEENL:
+            if (curNode->keyCompare(curNode->keys[slotID], std::vector<int>(keys.begin() + ih.num_attrs, keys.end())) == 1)
+            {
+                rid = curNode->entries[slotID];
+                slotID++;
+                return true;
+            }
+            break;
+        case CompOp::BETWEENR:
+        case CompOp::BETWEENLR:
+            if (curNode->keyCompare(curNode->keys[slotID], std::vector<int>(keys.begin() + ih.num_attrs, keys.end())) >= 0)
             {
                 rid = curNode->entries[slotID];
                 slotID++;

@@ -49,7 +49,11 @@ enum CompOp
     NO,
     IN,
     ISNULL,
-    ISNOTNULL
+    ISNOTNULL,
+    BETWEEN,
+    BETWEENL,
+    BETWEENR,
+    BETWEENLR,
 };
 
 union defaultValue

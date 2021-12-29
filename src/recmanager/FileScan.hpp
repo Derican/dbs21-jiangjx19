@@ -82,7 +82,7 @@ public:
     bool compare(DataType src)
     {
         if (multiCondition)
-            return compareMultiple(src);
+            return compareMultiple(src, conditions);
         else
             return compareSingle(src, op, type, offset, len, val);
     }
@@ -167,6 +167,18 @@ public:
             {
             case CompOp::E:
                 return strcmp(lhs, rhs) == 0;
+                break;
+            case CompOp::L:
+                return strcmp(lhs, rhs) < 0;
+                break;
+            case CompOp::LE:
+                return strcmp(lhs, rhs) <= 0;
+                break;
+            case CompOp::G:
+                return strcmp(lhs, rhs) > 0;
+                break;
+            case CompOp::GE:
+                return strcmp(lhs, rhs) >= 0;
                 break;
             case CompOp::NE:
                 return strcmp(lhs, rhs) != 0;
@@ -254,6 +266,18 @@ public:
             case CompOp::E:
                 return strcmp(lhs, rhs) == 0;
                 break;
+            case CompOp::L:
+                return strcmp(lhs, rhs) < 0;
+                break;
+            case CompOp::LE:
+                return strcmp(lhs, rhs) <= 0;
+                break;
+            case CompOp::G:
+                return strcmp(lhs, rhs) > 0;
+                break;
+            case CompOp::GE:
+                return strcmp(lhs, rhs) >= 0;
+                break;
             case CompOp::NE:
                 return strcmp(lhs, rhs) != 0;
                 break;
@@ -267,7 +291,7 @@ public:
             break;
         }
     }
-    bool compareMultiple(DataType src)
+    bool compareMultiple(DataType src, const std::vector<CompareCondition> &conditions)
     {
         for (auto cond : conditions)
         {
@@ -281,6 +305,26 @@ public:
                         break;
                     }
                 if (!flag)
+                    return false;
+            }
+            else if (cond.op == CompOp::BETWEEN)
+            {
+                if (!compareSingle(src, CompOp::G, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.vals[0]), cond.attrIdx) || !compareSingle(src, CompOp::L, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.vals[1]), cond.attrIdx))
+                    return false;
+            }
+            else if (cond.op == CompOp::BETWEENL)
+            {
+                if (!compareSingle(src, CompOp::GE, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.vals[0]), cond.attrIdx) || !compareSingle(src, CompOp::L, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.vals[1]), cond.attrIdx))
+                    return false;
+            }
+            else if (cond.op == CompOp::BETWEENR)
+            {
+                if (!compareSingle(src, CompOp::G, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.vals[0]), cond.attrIdx) || !compareSingle(src, CompOp::LE, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.vals[1]), cond.attrIdx))
+                    return false;
+            }
+            else if (cond.op == CompOp::BETWEENLR)
+            {
+                if (!compareSingle(src, CompOp::GE, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.vals[0]), cond.attrIdx) || !compareSingle(src, CompOp::LE, cond.type, cond.offset, cond.len, reinterpret_cast<void *>(&cond.vals[1]), cond.attrIdx))
                     return false;
             }
             else
