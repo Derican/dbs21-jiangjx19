@@ -4,6 +4,7 @@
 #include "FileHandle.hpp"
 
 #include <vector>
+#include <regex>
 
 class FileScan
 {
@@ -182,6 +183,9 @@ public:
                 break;
             case CompOp::NE:
                 return strcmp(lhs, rhs) != 0;
+                break;
+            case CompOp::LIKE:
+                return std::regex_match(lhs, std::regex(rhs));
                 break;
             default:
                 return false;

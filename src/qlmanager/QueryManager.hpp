@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <vector>
 #include <algorithm>
+#include <regex>
 
 class QueryManager
 {
@@ -112,7 +113,7 @@ public:
                         else
                         {
                             cc.rhsAttr = false;
-                            if (cond.op == CompOp::IN || cond.op >= 10)
+                            if (cond.op == CompOp::IN || cond.op >= 11)
                                 for (auto val : cond.rhsValues)
                                     cc.vals.push_back(val.pData);
                             else
@@ -358,7 +359,7 @@ public:
                                 cc.type = leftAllTypes[idx];
                                 cc.len = leftAllTypeLens[idx];
                                 cc.rhsAttr = false;
-                                if (cond.op == CompOp::IN || cond.op >= 10)
+                                if (cond.op == CompOp::IN || cond.op >= 11)
                                     for (auto val : cond.rhsValues)
                                         cc.vals.push_back(val.pData);
                                 else
@@ -440,7 +441,7 @@ public:
                                 cc.type = rightAllTypes[idx];
                                 cc.len = rightAllTypeLens[idx];
                                 cc.rhsAttr = false;
-                                if (cond.op == CompOp::IN || cond.op >= 10)
+                                if (cond.op == CompOp::IN || cond.op >= 11)
                                     for (auto val : cond.rhsValues)
                                         cc.vals.push_back(val.pData);
                                 else
@@ -970,7 +971,7 @@ public:
             cc.offset = allOffsets[idx];
             cc.type = allTypes[idx];
             cc.len = allTypeLens[idx];
-            if (cond.op == CompOp::IN || cond.op >= 10)
+            if (cond.op == CompOp::IN || cond.op >= 11)
                 for (auto val : cond.rhsValues)
                     cc.vals.push_back(val.pData);
             else
@@ -1271,7 +1272,7 @@ public:
             cc.offset = allOffsets[idx];
             cc.type = allTypes[idx];
             cc.len = allTypeLens[idx];
-            if (cond.op == CompOp::IN || cond.op >= 10)
+            if (cond.op == CompOp::IN || cond.op >= 11)
                 for (auto val : cond.rhsValues)
                     cc.vals.push_back(val.pData);
             else
@@ -1892,6 +1893,12 @@ public:
                             t.op = CompOp::E;
                             t.rhsValue = s.rhsValue;
                             break;
+                        case CompOp::LIKE:
+                            if (!std::regex_match(s.rhsValue.pData.String, std::regex(t.rhsValue.pData.String)))
+                                return false;
+                            t.op = CompOp::E;
+                            t.rhsValue = s.rhsValue;
+                            break;
                         case CompOp::IN:
                         {
                             bool found = false;
@@ -2015,6 +2022,7 @@ public:
                             }
                             break;
                         default:
+                            newConditions.push_back(conditions[i]);
                             break;
                         }
                     }
@@ -2116,6 +2124,7 @@ public:
                                 t.rhsValues[1] = s.rhsValue;
                             break;
                         default:
+                            newConditions.push_back(conditions[i]);
                             break;
                         }
                     }
@@ -2207,6 +2216,7 @@ public:
                             }
                             break;
                         default:
+                            newConditions.push_back(conditions[i]);
                             break;
                         }
                     }
@@ -2314,6 +2324,7 @@ public:
                                 t.rhsValues[0] = s.rhsValue;
                             break;
                         default:
+                            newConditions.push_back(conditions[i]);
                             break;
                         }
                     }
@@ -2403,6 +2414,7 @@ public:
                                 newConditions.push_back(s);
                             break;
                         default:
+                            newConditions.push_back(conditions[i]);
                             break;
                         }
                     }
@@ -2499,6 +2511,15 @@ public:
                             break;
                         case CompOp::ISNOTNULL:
                             break;
+                        case CompOp::LIKE:
+                            t.rhsValues.clear();
+                            for (auto v : s.rhsValues)
+                                if (std::regex_match(v.pData.String, std::regex(t.rhsValue.pData.String)))
+                                    t.rhsValues.push_back(v);
+                            if (t.rhsValues.size() == 0)
+                                return false;
+                            t.op = CompOp::IN;
+                            break;
                         case CompOp::BETWEEN:
                         {
                             std::vector<Value> tmp;
@@ -2540,6 +2561,7 @@ public:
                             break;
                         }
                         default:
+                            newConditions.push_back(conditions[i]);
                             break;
                         }
                     }
@@ -2565,6 +2587,7 @@ public:
                         case CompOp::ISNULL:
                             break;
                         default:
+                            newConditions.push_back(conditions[i]);
                             break;
                         }
                     }
@@ -2590,6 +2613,30 @@ public:
                             return false;
                             break;
                         default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::LIKE:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                            if (!std::regex_match(t.rhsValue.pData.String, std::regex(s.rhsValue.pData.String)))
+                                return false;
+                            break;
+                        case CompOp::IN:
+                            s.rhsValues.clear();
+                            for (auto v : t.rhsValues)
+                                if (std::regex_match(v.pData.String, std::regex(s.rhsValue.pData.String)))
+                                    s.rhsValues.push_back(v);
+                            if (s.rhsValues.size() == 0)
+                                return false;
+                            t.rhsValues = s.rhsValues;
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
                             break;
                         }
                     }
@@ -2755,6 +2802,7 @@ public:
                             }
                             break;
                         default:
+                            newConditions.push_back(conditions[i]);
                             break;
                         }
                     }
@@ -2943,6 +2991,7 @@ public:
                             }
                             break;
                         default:
+                            newConditions.push_back(conditions[i]);
                             break;
                         }
                     }
@@ -3131,6 +3180,7 @@ public:
                             }
                             break;
                         default:
+                            newConditions.push_back(conditions[i]);
                             break;
                         }
                     }
@@ -3342,11 +3392,13 @@ public:
                             }
                             break;
                         default:
+                            newConditions.push_back(conditions[i]);
                             break;
                         }
                     }
                     break;
                     default:
+                        newConditions.push_back(conditions[i]);
                         break;
                     }
                     newConditions[j] = t;

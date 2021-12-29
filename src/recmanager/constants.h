@@ -50,6 +50,7 @@ enum CompOp
     IN,
     ISNULL,
     ISNOTNULL,
+    LIKE,
     BETWEEN,
     BETWEENL,
     BETWEENR,
