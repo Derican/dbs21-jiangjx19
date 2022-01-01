@@ -1754,11 +1754,11 @@ public:
             fs2.openScan(hd, AttrType::ANY, 4, 0, CompOp::NO, nullptr);
             while (fs2.getNextRec(rec2))
             {
-                flag = true;
                 rec2.getRID(q);
                 rec2.getData(qd);
                 if (p.equals(q))
                     continue;
+                flag = true;
                 for (auto i = 0; i < lenNo.size() && flag; i++)
                     if (memcmp(pd + indexNo[i], qd + indexNo[i], lenNo[i]) != 0)
                         flag = false;

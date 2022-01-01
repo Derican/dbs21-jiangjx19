@@ -116,11 +116,11 @@ public:
     {
         int index;
         bool found = searchKeyUpperBound(e, index);
-        if (found)
-        {
-            std::cout << "Duplicate key inserted." << std::endl;
-            return false;
-        }
+        // if (found)
+        // {
+        //     std::cout << "Duplicate key inserted." << std::endl;
+        //     return false;
+        // }
         keys.insert(keys.begin() + index, e);
         children.insert(children.begin() + index + 1, child);
         return true;

@@ -652,11 +652,12 @@ public:
     antlrcpp::Any visitAlter_table_add_pk(SQLParser::Alter_table_add_pkContext *ctx) override
     {
         std::string tableName = ctx->Identifier(0)->getText();
+        std::string indexName = ctx->Identifier(1)->getText();
         std::vector<std::string> attrName;
         for (auto idt : ctx->identifiers()->Identifier())
             attrName.push_back(idt->getText());
 
-        sm->createIndex(tableName, attrName, true);
+        sm->createIndex(tableName, attrName, true, indexName);
         antlrcpp::Any res;
         return res;
     }
