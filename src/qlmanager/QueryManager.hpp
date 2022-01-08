@@ -48,7 +48,8 @@ public:
             std::vector<int> allOffsets;
             std::vector<AttrType> allTypes;
             std::vector<int> allTypeLens;
-            sm->getAllAttr(tableName, allAttrName, allOffsets, allTypes, allTypeLens);
+            if (!sm->getAllAttr(tableName, allAttrName, allOffsets, allTypes, allTypeLens))
+                return false;
             // get selAttrs
             std::vector<std::string> attrName;
             std::vector<int> offsets;
@@ -68,7 +69,8 @@ public:
                     int offset;
                     AttrType type;
                     int typeLen;
-                    sm->getAttrInfo(tableName, attr.attrName, offset, type, typeLen);
+                    if (!sm->getAttrInfo(tableName, attr.attrName, offset, type, typeLen))
+                        return false;
                     attrName.push_back(attr.attrName);
                     offsets.push_back(offset);
                     types.push_back(type);
@@ -97,6 +99,11 @@ public:
                     for (auto cond : conditions)
                     {
                         auto it = std::find(allAttrName.begin(), allAttrName.end(), cond.lhs.attrName);
+                        if (it == allAttrName.end())
+                        {
+                            std::cout << "Attribute " << cond.lhs.relName << "." << cond.lhs.attrName << " not exists." << std::endl;
+                            return false;
+                        }
                         auto idx = std::distance(allAttrName.begin(), it);
                         CompareCondition cc;
                         cc.op = cond.op;
@@ -107,6 +114,11 @@ public:
                         {
                             cc.rhsAttr = true;
                             auto _it = std::find(allAttrName.begin(), allAttrName.end(), cond.rhs.attrName);
+                            if (_it == allAttrName.end())
+                            {
+                                std::cout << "Attribute " << cond.rhs.relName << "." << cond.rhs.attrName << " not exists." << std::endl;
+                                return false;
+                            }
                             auto _idx = std::distance(allAttrName.begin(), _it);
                             cc.rhsOffset = allOffsets[_idx];
                         }
@@ -965,6 +977,11 @@ public:
         for (auto cond : conditions)
         {
             auto it = std::find(allAttrName.begin(), allAttrName.end(), cond.lhs.attrName);
+            if (it == allAttrName.end())
+            {
+                std::cout << "Attribute " << cond.lhs.relName << "." << cond.lhs.attrName << " not exists." << std::endl;
+                return false;
+            }
             auto idx = std::distance(allAttrName.begin(), it);
             CompareCondition cc;
             cc.op = cond.op;
@@ -980,6 +997,11 @@ public:
                 {
                     cc.rhsAttr = true;
                     auto _it = std::find(allAttrName.begin(), allAttrName.end(), cond.rhs.attrName);
+                    if (_it == allAttrName.end())
+                    {
+                        std::cout << "Attribute " << cond.rhs.relName << "." << cond.rhs.attrName << " not exists." << std::endl;
+                        return false;
+                    }
                     auto _idx = std::distance(allAttrName.begin(), _it);
                     cc.rhsOffset = allOffsets[_idx];
                 }
@@ -1266,6 +1288,11 @@ public:
         for (auto cond : conditions)
         {
             auto it = std::find(allAttrName.begin(), allAttrName.end(), cond.lhs.attrName);
+            if (it == allAttrName.end())
+            {
+                std::cout << "Attribute " << cond.lhs.relName << "." << cond.lhs.attrName << " not exists." << std::endl;
+                return false;
+            }
             auto idx = std::distance(allAttrName.begin(), it);
             CompareCondition cc;
             cc.op = cond.op;
@@ -1281,6 +1308,11 @@ public:
                 {
                     cc.rhsAttr = true;
                     auto _it = std::find(allAttrName.begin(), allAttrName.end(), cond.rhs.attrName);
+                    if (_it == allAttrName.end())
+                    {
+                        std::cout << "Attribute " << cond.rhs.relName << "." << cond.rhs.attrName << " not exists." << std::endl;
+                        return false;
+                    }
                     auto _idx = std::distance(allAttrName.begin(), _it);
                     cc.rhsOffset = allOffsets[_idx];
                 }
@@ -1715,6 +1747,11 @@ public:
         for (auto set_c : sets)
         {
             auto it = std::find(allAttrName.begin(), allAttrName.end(), set_c.lhs.attrName);
+            if (it == allAttrName.end())
+            {
+                std::cout << "Attribute " << set_c.lhs.relName << "." << set_c.lhs.attrName << " not exists." << std::endl;
+                return false;
+            }
             auto idx = std::distance(allAttrName.begin(), it);
 
             if (set_c.rhsValue.type == AttrType::NONE)
