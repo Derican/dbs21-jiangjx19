@@ -7,7 +7,7 @@
 #define DBNAME_MAX_BYTES 100
 #define RELNAME_MAX_BYTES 100
 #define ATTRNAME_MAX_BYTES 100
-#define VARCHAR_MAX_BYTES 100
+#define VARCHAR_MAX_BYTES 200
 #define IXNAMECHAR_MAX_BYTES 100
 
 enum AttrType
@@ -19,7 +19,24 @@ enum AttrType
     NONE
 };
 
-const std::string Type2String[] = {"ANY", "INT", "FLOAT", "VARCHAR", "NONE"};
+inline std::string Type2String(AttrType type, int len)
+{
+    switch (type)
+    {
+    case AttrType::ANY:
+        return "ANY";
+    case AttrType::INT:
+        return "INT";
+    case AttrType::FLOAT:
+        return "FLOAT";
+    case AttrType::VARCHAR:
+        return "VARCHAR(" + std::to_string(len) + ")";
+    case AttrType::NONE:
+        return "NONE";
+    default:
+        return "";
+    }
+}
 
 enum CompOp
 {
@@ -32,7 +49,12 @@ enum CompOp
     NO,
     IN,
     ISNULL,
-    ISNOTNULL
+    ISNOTNULL,
+    LIKE,
+    BETWEEN,
+    BETWEENL,
+    BETWEENR,
+    BETWEENLR,
 };
 
 union defaultValue
@@ -40,6 +62,10 @@ union defaultValue
     int Int;
     float Float;
     char String[VARCHAR_MAX_BYTES];
+    defaultValue()
+    {
+        memset(String, 0, VARCHAR_MAX_BYTES);
+    }
 };
 
 struct CompareCondition

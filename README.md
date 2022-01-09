@@ -10,14 +10,18 @@ This is a pilot project developing mysql-like databases based on the parser offe
 | cmake | 3.10.2 |
 | gcc | 7.5.0 |
 | antlr4 | 4.9.2 |
+| java | 11.0.11 |
+| pkg-config | 0.29.1 |
+| uuid | 2.31.1 |
 
 # Quick Start
 
 * configure
   
   ```sh
+  mkdir build
   cd build
-  cmake .. -DANTLR_JAR_LOCATION=../antlr-4.9.2-comeplete.jar
+  cmake .. -DANTLR_JAR_LOCATION=../antlr-4.9.2-complete.jar
   ```
 * build
   

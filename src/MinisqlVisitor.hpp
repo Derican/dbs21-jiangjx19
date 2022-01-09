@@ -100,6 +100,112 @@ public:
         }
         else if (auto where = dynamic_cast<SQLParser::Where_like_stringContext *>(ctx))
         {
+            auto column = where->column();
+            if (column->Identifier().size() == 1)
+            {
+                condition.lhs.relName = "";
+                condition.lhs.attrName = column->Identifier(0)->getText();
+            }
+            else
+            {
+                condition.lhs.relName = column->Identifier(0)->getText();
+                condition.lhs.attrName = column->Identifier(1)->getText();
+            }
+
+            condition.op = CompOp::LIKE;
+            auto mysqlLike = where->String()->getText();
+            mysqlLike = mysqlLike.substr(1, mysqlLike.size() - 1);
+            std::string regexLike;
+            int mode = 0, pct_cnt = 0, udl_cnt = 0;
+            for (auto c : mysqlLike)
+            {
+                switch (c)
+                {
+                case '%':
+                    switch (mode)
+                    {
+                    case 0:
+                        mode = 1;
+                        pct_cnt++;
+                        break;
+                    case 1:
+                        pct_cnt++;
+                        break;
+                    case 2:
+                        regexLike += "[^\']{" + std::to_string(udl_cnt) + "}";
+                        mode = 1;
+                        break;
+
+                    default:
+                        break;
+                    }
+                    break;
+                case '_':
+                    switch (mode)
+                    {
+                    case 0:
+                        mode = 2;
+                        udl_cnt++;
+                        break;
+                    case 1:
+                        regexLike += "[^\']*";
+                        mode = 2;
+                        break;
+                    case 2:
+                        udl_cnt++;
+                        break;
+
+                    default:
+                        break;
+                    }
+                    break;
+                case '\'':
+                    switch (mode)
+                    {
+                    case 0:
+                        break;
+                    case 1:
+                        regexLike += "[^\']*";
+                        mode = 0;
+                        pct_cnt = 0;
+                        break;
+                    case 2:
+                        regexLike += "[^\']{" + std::to_string(udl_cnt) + "}";
+                        mode = 0;
+                        udl_cnt = 0;
+                        break;
+
+                    default:
+                        break;
+                    }
+                    break;
+                default:
+                    switch (mode)
+                    {
+                    case 0:
+                        regexLike += c;
+                        break;
+                    case 1:
+                        regexLike += "[^\']*";
+                        regexLike += c;
+                        mode = 0;
+                        pct_cnt = 0;
+                        break;
+                    case 2:
+                        regexLike += "[^\']{" + std::to_string(udl_cnt) + "}";
+                        regexLike += c;
+                        mode = 0;
+                        udl_cnt = 0;
+                        break;
+
+                    default:
+                        break;
+                    }
+                    break;
+                }
+            }
+            condition.rhsValue.len = regexLike.size();
+            strcpy(condition.rhsValue.pData.String, regexLike.c_str());
         }
         else if (auto where = dynamic_cast<SQLParser::Where_nullContext *>(ctx))
         {
@@ -546,11 +652,12 @@ public:
     antlrcpp::Any visitAlter_table_add_pk(SQLParser::Alter_table_add_pkContext *ctx) override
     {
         std::string tableName = ctx->Identifier(0)->getText();
+        std::string indexName = ctx->Identifier(1)->getText();
         std::vector<std::string> attrName;
         for (auto idt : ctx->identifiers()->Identifier())
             attrName.push_back(idt->getText());
 
-        sm->createIndex(tableName, attrName, true);
+        sm->createIndex(tableName, attrName, true, indexName);
         antlrcpp::Any res;
         return res;
     }

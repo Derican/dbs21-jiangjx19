@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <vector>
 #include <algorithm>
+#include <regex>
 
 class QueryManager
 {
@@ -32,7 +33,7 @@ public:
         rm = nullptr;
     }
 
-    bool select(const std::vector<RelAttr> &selAttrs, const std::vector<std::string> &relations, const std::vector<Condition> &conditions, std::vector<Record> &results, const bool final)
+    bool select(const std::vector<RelAttr> &selAttrs, const std::vector<std::string> &relations, std::vector<Condition> &conditions, std::vector<Record> &results, const bool final)
     {
         if (!sm->dbOpened)
         {
@@ -47,7 +48,8 @@ public:
             std::vector<int> allOffsets;
             std::vector<AttrType> allTypes;
             std::vector<int> allTypeLens;
-            sm->getAllAttr(tableName, allAttrName, allOffsets, allTypes, allTypeLens);
+            if (!sm->getAllAttr(tableName, allAttrName, allOffsets, allTypes, allTypeLens))
+                return false;
             // get selAttrs
             std::vector<std::string> attrName;
             std::vector<int> offsets;
@@ -67,7 +69,8 @@ public:
                     int offset;
                     AttrType type;
                     int typeLen;
-                    sm->getAttrInfo(tableName, attr.attrName, offset, type, typeLen);
+                    if (!sm->getAttrInfo(tableName, attr.attrName, offset, type, typeLen))
+                        return false;
                     attrName.push_back(attr.attrName);
                     offsets.push_back(offset);
                     types.push_back(type);
@@ -90,66 +93,83 @@ public:
             }
             else
             {
-                std::vector<CompareCondition> conds;
-                for (auto cond : conditions)
+                if (optimizeConditions(conditions))
                 {
-                    auto it = std::find(allAttrName.begin(), allAttrName.end(), cond.lhs.attrName);
-                    auto idx = std::distance(allAttrName.begin(), it);
-                    CompareCondition cc;
-                    cc.op = cond.op;
-                    cc.offset = allOffsets[idx];
-                    cc.type = allTypes[idx];
-                    cc.len = allTypeLens[idx];
-                    if (cond.bRhsIsAttr == 1)
+                    std::vector<CompareCondition> conds;
+                    for (auto cond : conditions)
                     {
-                        cc.rhsAttr = true;
-                        auto _it = std::find(allAttrName.begin(), allAttrName.end(), cond.rhs.attrName);
-                        auto _idx = std::distance(allAttrName.begin(), _it);
-                        cc.rhsOffset = allOffsets[_idx];
+                        auto it = std::find(allAttrName.begin(), allAttrName.end(), cond.lhs.attrName);
+                        if (it == allAttrName.end())
+                        {
+                            std::cout << "Attribute " << cond.lhs.relName << "." << cond.lhs.attrName << " not exists." << std::endl;
+                            return false;
+                        }
+                        auto idx = std::distance(allAttrName.begin(), it);
+                        CompareCondition cc;
+                        cc.op = cond.op;
+                        cc.offset = allOffsets[idx];
+                        cc.type = allTypes[idx];
+                        cc.len = allTypeLens[idx];
+                        if (cond.bRhsIsAttr == 1)
+                        {
+                            cc.rhsAttr = true;
+                            auto _it = std::find(allAttrName.begin(), allAttrName.end(), cond.rhs.attrName);
+                            if (_it == allAttrName.end())
+                            {
+                                std::cout << "Attribute " << cond.rhs.relName << "." << cond.rhs.attrName << " not exists." << std::endl;
+                                return false;
+                            }
+                            auto _idx = std::distance(allAttrName.begin(), _it);
+                            cc.rhsOffset = allOffsets[_idx];
+                        }
+                        else
+                        {
+                            cc.rhsAttr = false;
+                            if (cond.op == CompOp::IN || cond.op >= 11)
+                                for (auto val : cond.rhsValues)
+                                    cc.vals.push_back(val.pData);
+                            else
+                                cc.val = cond.rhsValue.pData;
+                        }
+                        cc.attrIdx = idx;
+                        conds.push_back(cc);
+                    }
+
+                    // check primary key and index
+                    bool use_indexNo = false;
+                    std::vector<int> used_indexNo;
+                    CompOp used_op = CompOp::NO;
+                    std::vector<int> used_keys;
+                    std::vector<CompareCondition> otherConds;
+                    checkPrimaryKeyAndIndex(tableName, conds, use_indexNo, used_indexNo, used_op, used_keys, otherConds);
+
+                    if (use_indexNo)
+                    {
+                        IndexHandle ih;
+                        IndexScan is;
+                        im->openIndex(sm->openedDbName + "/" + tableName, used_indexNo, ih);
+                        is.openScan(ih, used_op, used_keys);
+                        RID rid;
+                        Record rec;
+                        while (is.getNextEntry(rid))
+                        {
+                            fh.getRec(rid, rec);
+                            DataType tmp;
+                            rec.getData(tmp);
+                            if (fs.compareMultiple(tmp, otherConds))
+                                results.push_back(rec);
+                        }
+                        is.closeScan();
+                        im->closeIndex(sm->openedDbName + "/" + tableName, used_indexNo);
                     }
                     else
                     {
-                        cc.rhsAttr = false;
-                        if (cond.op == CompOp::IN)
-                            for (auto val : cond.rhsValues)
-                                cc.vals.push_back(val.pData);
-                        else
-                            cc.val = cond.rhsValue.pData;
+                        fs.openScan(fh, conds);
+                        Record rec;
+                        while (fs.getNextRec(rec))
+                            results.push_back(rec);
+                        fs.closeScan();
                     }
-                    cc.attrIdx = idx;
-                    conds.push_back(cc);
-                }
-
-                // check primary key and index
-                bool use_indexNo = false;
-                std::vector<int> used_indexNo;
-                CompOp used_op = CompOp::NO;
-                std::vector<int> used_keys;
-                checkPrimaryKeyAndIndex(tableName, conds, use_indexNo, used_indexNo, used_op, used_keys);
-
-                if (use_indexNo)
-                {
-                    IndexHandle ih;
-                    IndexScan is;
-                    im->openIndex(sm->openedDbName + "/" + tableName, used_indexNo, ih);
-                    is.openScan(ih, used_op, used_keys);
-                    RID rid;
-                    Record rec;
-                    while (is.getNextEntry(rid))
-                    {
-                        fh.getRec(rid, rec);
-                        results.push_back(rec);
-                    }
-                    is.closeScan();
-                    im->closeIndex(sm->openedDbName + "/" + tableName, used_indexNo);
-                }
-                else
-                {
-                    fs.openScan(fh, conds);
-                    Record rec;
-                    while (fs.getNextRec(rec))
-                        results.push_back(rec);
-                    fs.closeScan();
                 }
             }
 
@@ -275,388 +295,405 @@ public:
             }
             else
             {
-                std::vector<CompareCondition> lconds, rconds, lrconds, rlconds;
-                for (auto cond : conditions)
+                if (optimizeConditions(conditions))
                 {
-                    if (cond.lhs.relName == relations[0])
+                    std::vector<CompareCondition> lconds, rconds, lrconds, rlconds;
+                    for (auto cond : conditions)
                     {
-                        CompareCondition cc;
-                        auto it = std::find(leftAllAttrName.begin(), leftAllAttrName.end(), cond.lhs.attrName);
-                        if (it == leftAllAttrName.end())
+                        if (cond.lhs.relName == relations[0])
                         {
-                            std::cout << "Invalid attribute " << cond.lhs.relName << '.' << cond.lhs.attrName << std::endl;
-                            return false;
-                        }
-                        auto idx = std::distance(leftAllAttrName.begin(), it);
-                        if (cond.bRhsIsAttr == 1)
-                        {
-                            if (cond.rhs.relName == relations[0])
+                            CompareCondition cc;
+                            auto it = std::find(leftAllAttrName.begin(), leftAllAttrName.end(), cond.lhs.attrName);
+                            if (it == leftAllAttrName.end())
                             {
-                                cc.rhsAttr = true;
-                                auto _it = std::find(leftAllAttrName.begin(), leftAllAttrName.end(), cond.rhs.attrName);
-                                if (_it == leftAllAttrName.end())
+                                std::cout << "Invalid attribute " << cond.lhs.relName << '.' << cond.lhs.attrName << std::endl;
+                                return false;
+                            }
+                            auto idx = std::distance(leftAllAttrName.begin(), it);
+                            if (cond.bRhsIsAttr == 1)
+                            {
+                                if (cond.rhs.relName == relations[0])
+                                {
+                                    cc.rhsAttr = true;
+                                    auto _it = std::find(leftAllAttrName.begin(), leftAllAttrName.end(), cond.rhs.attrName);
+                                    if (_it == leftAllAttrName.end())
+                                    {
+                                        std::cout << "Invalid attribute " << cond.rhs.relName << '.' << cond.rhs.attrName << std::endl;
+                                        return false;
+                                    }
+                                    auto _idx = std::distance(leftAllAttrName.begin(), _it);
+                                    cc.rhsOffset = leftAllOffsets[_idx];
+
+                                    cc.op = cond.op;
+                                    cc.offset = leftAllOffsets[idx];
+                                    cc.type = leftAllTypes[idx];
+                                    cc.len = leftAllTypeLens[idx];
+                                    cc.attrIdx = idx;
+                                    lconds.push_back(cc);
+                                }
+                                else if (cond.rhs.relName == relations[1])
+                                {
+                                    cc.rhsAttr = true;
+                                    auto _it = std::find(rightAllAttrName.begin(), rightAllAttrName.end(), cond.rhs.attrName);
+                                    if (_it == rightAllAttrName.end())
+                                    {
+                                        std::cout << "Invalid attribute " << cond.rhs.relName << '.' << cond.rhs.attrName << std::endl;
+                                        return false;
+                                    }
+                                    auto _idx = std::distance(rightAllAttrName.begin(), _it);
+
+                                    cc.rhsOffset = rightAllOffsets[_idx];
+                                    cc.op = cond.op;
+                                    cc.offset = leftAllOffsets[idx];
+                                    cc.type = leftAllTypes[idx];
+                                    cc.len = leftAllTypeLens[idx];
+                                    cc.attrIdx = idx;
+                                    lrconds.push_back(cc);
+
+                                    cc.rhsOffset = leftAllOffsets[idx];
+                                    cc.op = negOp(cond.op);
+                                    cc.offset = rightAllOffsets[_idx];
+                                    cc.type = rightAllTypes[_idx];
+                                    cc.len = rightAllTypeLens[_idx];
+                                    cc.attrIdx = _idx;
+                                    rlconds.push_back(cc);
+                                }
+                                else
                                 {
                                     std::cout << "Invalid attribute " << cond.rhs.relName << '.' << cond.rhs.attrName << std::endl;
                                     return false;
                                 }
-                                auto _idx = std::distance(leftAllAttrName.begin(), _it);
-                                cc.rhsOffset = leftAllOffsets[_idx];
-
+                            }
+                            else
+                            {
                                 cc.op = cond.op;
                                 cc.offset = leftAllOffsets[idx];
                                 cc.type = leftAllTypes[idx];
                                 cc.len = leftAllTypeLens[idx];
+                                cc.rhsAttr = false;
+                                if (cond.op == CompOp::IN || cond.op >= 11)
+                                    for (auto val : cond.rhsValues)
+                                        cc.vals.push_back(val.pData);
+                                else
+                                {
+                                    cc.val = cond.rhsValue.pData;
+                                }
                                 cc.attrIdx = idx;
                                 lconds.push_back(cc);
                             }
-                            else if (cond.rhs.relName == relations[1])
+                        }
+                        else if (cond.lhs.relName == relations[1])
+                        {
+                            CompareCondition cc;
+                            auto it = std::find(rightAllAttrName.begin(), rightAllAttrName.end(), cond.lhs.attrName);
+                            if (it == rightAllAttrName.end())
                             {
-                                cc.rhsAttr = true;
-                                auto _it = std::find(rightAllAttrName.begin(), rightAllAttrName.end(), cond.rhs.attrName);
-                                if (_it == rightAllAttrName.end())
+                                std::cout << "Invalid attribute " << cond.lhs.relName << '.' << cond.lhs.attrName << std::endl;
+                                return false;
+                            }
+                            auto idx = std::distance(rightAllAttrName.begin(), it);
+                            if (cond.bRhsIsAttr == 1)
+                            {
+                                if (cond.rhs.relName == relations[1])
+                                {
+                                    cc.rhsAttr = true;
+                                    auto _it = std::find(rightAllAttrName.begin(), rightAllAttrName.end(), cond.rhs.attrName);
+                                    if (_it == rightAllAttrName.end())
+                                    {
+                                        std::cout << "Invalid attribute " << cond.rhs.relName << '.' << cond.rhs.attrName << std::endl;
+                                        return false;
+                                    }
+                                    auto _idx = std::distance(rightAllAttrName.begin(), _it);
+                                    cc.rhsOffset = rightAllOffsets[_idx];
+
+                                    cc.op = cond.op;
+                                    cc.offset = rightAllOffsets[idx];
+                                    cc.type = rightAllTypes[idx];
+                                    cc.len = rightAllTypeLens[idx];
+                                    cc.attrIdx = idx;
+                                    rconds.push_back(cc);
+                                }
+                                else if (cond.rhs.relName == relations[0])
+                                {
+                                    cc.rhsAttr = true;
+                                    auto _it = std::find(leftAllAttrName.begin(), leftAllAttrName.end(), cond.rhs.attrName);
+                                    if (_it == leftAllAttrName.end())
+                                    {
+                                        std::cout << "Invalid attribute " << cond.rhs.relName << '.' << cond.rhs.attrName << std::endl;
+                                        return false;
+                                    }
+                                    auto _idx = std::distance(leftAllAttrName.begin(), _it);
+
+                                    cc.rhsOffset = rightAllOffsets[idx];
+                                    cc.op = negOp(cond.op);
+                                    cc.offset = leftAllOffsets[_idx];
+                                    cc.type = leftAllTypes[_idx];
+                                    cc.len = leftAllTypeLens[_idx];
+                                    cc.attrIdx = _idx;
+                                    lrconds.push_back(cc);
+
+                                    cc.rhsOffset = leftAllOffsets[_idx];
+                                    cc.op = cond.op;
+                                    cc.offset = rightAllOffsets[idx];
+                                    cc.type = rightAllTypes[idx];
+                                    cc.len = rightAllTypeLens[idx];
+                                    cc.attrIdx = idx;
+                                    rlconds.push_back(cc);
+                                }
+                                else
                                 {
                                     std::cout << "Invalid attribute " << cond.rhs.relName << '.' << cond.rhs.attrName << std::endl;
                                     return false;
                                 }
-                                auto _idx = std::distance(rightAllAttrName.begin(), _it);
-
-                                cc.rhsOffset = rightAllOffsets[_idx];
-                                cc.op = cond.op;
-                                cc.offset = leftAllOffsets[idx];
-                                cc.type = leftAllTypes[idx];
-                                cc.len = leftAllTypeLens[idx];
-                                cc.attrIdx = idx;
-                                lrconds.push_back(cc);
-
-                                cc.rhsOffset = leftAllOffsets[idx];
-                                cc.op = negOp(cond.op);
-                                cc.offset = rightAllOffsets[_idx];
-                                cc.type = rightAllTypes[_idx];
-                                cc.len = rightAllTypeLens[_idx];
-                                cc.attrIdx = _idx;
-                                rlconds.push_back(cc);
                             }
                             else
                             {
-                                std::cout << "Invalid attribute " << cond.rhs.relName << '.' << cond.rhs.attrName << std::endl;
-                                return false;
+                                cc.op = cond.op;
+                                cc.offset = rightAllOffsets[idx];
+                                cc.type = rightAllTypes[idx];
+                                cc.len = rightAllTypeLens[idx];
+                                cc.rhsAttr = false;
+                                if (cond.op == CompOp::IN || cond.op >= 11)
+                                    for (auto val : cond.rhsValues)
+                                        cc.vals.push_back(val.pData);
+                                else
+                                    cc.val = cond.rhsValue.pData;
+                                cc.attrIdx = idx;
+                                rconds.push_back(cc);
                             }
                         }
                         else
-                        {
-                            cc.op = cond.op;
-                            cc.offset = leftAllOffsets[idx];
-                            cc.type = leftAllTypes[idx];
-                            cc.len = leftAllTypeLens[idx];
-                            cc.rhsAttr = false;
-                            if (cond.op == CompOp::IN)
-                                for (auto val : cond.rhsValues)
-                                    cc.vals.push_back(val.pData);
-                            else
-                            {
-                                cc.val = cond.rhsValue.pData;
-                            }
-                            cc.attrIdx = idx;
-                            lconds.push_back(cc);
-                        }
-                    }
-                    else if (cond.lhs.relName == relations[1])
-                    {
-                        CompareCondition cc;
-                        auto it = std::find(rightAllAttrName.begin(), rightAllAttrName.end(), cond.lhs.attrName);
-                        if (it == rightAllAttrName.end())
                         {
                             std::cout << "Invalid attribute " << cond.lhs.relName << '.' << cond.lhs.attrName << std::endl;
                             return false;
                         }
-                        auto idx = std::distance(rightAllAttrName.begin(), it);
-                        if (cond.bRhsIsAttr == 1)
+                    }
+
+                    // check primary key and index
+                    bool luse_indexNo = false;
+                    std::vector<int> lused_indexNo;
+                    CompOp lused_op = CompOp::NO;
+                    std::vector<int> lused_keys;
+                    bool ruse_indexNo = false;
+                    std::vector<int> rused_indexNo;
+                    CompOp rused_op = CompOp::NO;
+                    std::vector<int> rused_keys;
+                    std::vector<CompareCondition> lotherConds;
+                    std::vector<CompareCondition> rotherConds;
+
+                    checkPrimaryKeyAndIndex(leftTableName, lconds, luse_indexNo, lused_indexNo, lused_op, lused_keys, lotherConds);
+                    checkPrimaryKeyAndIndex(rightTableName, rconds, ruse_indexNo, rused_indexNo, rused_op, rused_keys, rotherConds);
+
+                    Record rec;
+                    if (luse_indexNo)
+                    {
+                        IndexHandle lih;
+                        IndexScan lis;
+                        im->openIndex(sm->openedDbName + "/" + leftTableName, lused_indexNo, lih);
+                        lis.openScan(lih, lused_op, lused_keys);
+                        RID lrid;
+                        Record lrec;
+                        DataType ldata;
+                        while (lis.getNextEntry(lrid))
                         {
-                            if (cond.rhs.relName == relations[1])
-                            {
-                                cc.rhsAttr = true;
-                                auto _it = std::find(rightAllAttrName.begin(), rightAllAttrName.end(), cond.rhs.attrName);
-                                if (_it == rightAllAttrName.end())
-                                {
-                                    std::cout << "Invalid attribute " << cond.rhs.relName << '.' << cond.rhs.attrName << std::endl;
-                                    return false;
-                                }
-                                auto _idx = std::distance(rightAllAttrName.begin(), _it);
-                                cc.rhsOffset = rightAllOffsets[_idx];
+                            lfh.getRec(lrid, lrec);
+                            lrec.getData(ldata);
 
-                                cc.op = cond.op;
-                                cc.offset = rightAllOffsets[idx];
-                                cc.type = rightAllTypes[idx];
-                                cc.len = rightAllTypeLens[idx];
-                                cc.attrIdx = idx;
-                                rconds.push_back(cc);
+                            if (!lfs.compareMultiple(ldata, lotherConds))
+                                continue;
+
+                            std::vector<CompareCondition> rconds_ext = rconds;
+                            for (auto rlc : rlconds)
+                            {
+                                CompareCondition rc = rlc;
+                                memcpy(&rc.val, ldata + rc.rhsOffset, rc.len);
+                                rc.rhsAttr = false;
+                                rconds_ext.push_back(rc);
                             }
-                            else if (cond.rhs.relName == relations[0])
+
+                            checkPrimaryKeyAndIndex(rightTableName, rconds_ext, ruse_indexNo, rused_indexNo, rused_op, rused_keys, rotherConds);
+
+                            Record rec;
+                            if (ruse_indexNo)
                             {
-                                cc.rhsAttr = true;
-                                auto _it = std::find(leftAllAttrName.begin(), leftAllAttrName.end(), cond.rhs.attrName);
-                                if (_it == leftAllAttrName.end())
+                                IndexHandle rih;
+                                IndexScan ris;
+                                im->openIndex(sm->openedDbName + "/" + rightTableName, rused_indexNo, rih);
+                                ris.openScan(rih, rused_op, rused_keys);
+                                RID rrid;
+                                Record rrec;
+                                DataType rdata;
+                                while (ris.getNextEntry(rrid))
                                 {
-                                    std::cout << "Invalid attribute " << cond.rhs.relName << '.' << cond.rhs.attrName << std::endl;
-                                    return false;
+                                    rfh.getRec(rrid, rrec);
+                                    rrec.getData(rdata);
+                                    if (!rfs.compareMultiple(rdata, rotherConds))
+                                        continue;
+                                    memcpy(joinedData, ldata, leftTupleLen);
+                                    memcpy(joinedData + leftTupleLen, rdata, rightTupleLen);
+                                    rec.set(defaultRID, joinedData, leftTupleLen + rightTupleLen);
+                                    results.push_back(rec);
                                 }
-                                auto _idx = std::distance(leftAllAttrName.begin(), _it);
-
-                                cc.rhsOffset = rightAllOffsets[idx];
-                                cc.op = negOp(cond.op);
-                                cc.offset = leftAllOffsets[_idx];
-                                cc.type = leftAllTypes[_idx];
-                                cc.len = leftAllTypeLens[_idx];
-                                cc.attrIdx = _idx;
-                                lrconds.push_back(cc);
-
-                                cc.rhsOffset = leftAllOffsets[_idx];
-                                cc.op = cond.op;
-                                cc.offset = rightAllOffsets[idx];
-                                cc.type = rightAllTypes[idx];
-                                cc.len = rightAllTypeLens[idx];
-                                cc.attrIdx = idx;
-                                rlconds.push_back(cc);
+                                ris.closeScan();
+                                im->closeIndex(sm->openedDbName + "/" + rightTableName, rused_indexNo);
                             }
                             else
                             {
-                                std::cout << "Invalid attribute " << cond.rhs.relName << '.' << cond.rhs.attrName << std::endl;
-                                return false;
+                                rfs.openScan(rfh, rconds_ext);
+                                Record rrec;
+                                DataType rdata;
+                                while (rfs.getNextRec(rrec))
+                                {
+                                    rrec.getData(rdata);
+                                    memcpy(joinedData, ldata, leftTupleLen);
+                                    memcpy(joinedData + leftTupleLen, rdata, rightTupleLen);
+                                    rec.set(defaultRID, joinedData, leftTupleLen + rightTupleLen);
+                                    results.push_back(rec);
+                                }
+                                rfs.closeScan();
                             }
                         }
-                        else
+                        lis.closeScan();
+                        im->closeIndex(sm->openedDbName + "/" + leftTableName, lused_indexNo);
+                    }
+                    else if (ruse_indexNo)
+                    {
+                        IndexHandle rih;
+                        IndexScan ris;
+                        im->openIndex(sm->openedDbName + "/" + rightTableName, rused_indexNo, rih);
+                        ris.openScan(rih, rused_op, rused_keys);
+                        RID rrid;
+                        Record rrec;
+                        DataType rdata;
+                        while (ris.getNextEntry(rrid))
                         {
-                            cc.op = cond.op;
-                            cc.offset = rightAllOffsets[idx];
-                            cc.type = rightAllTypes[idx];
-                            cc.len = rightAllTypeLens[idx];
-                            cc.rhsAttr = false;
-                            if (cond.op == CompOp::IN)
-                                for (auto val : cond.rhsValues)
-                                    cc.vals.push_back(val.pData);
+                            rfh.getRec(rrid, rrec);
+                            rrec.getData(rdata);
+
+                            if (!rfs.compareMultiple(rdata, rotherConds))
+                                continue;
+
+                            std::vector<CompareCondition> lconds_ext = lconds;
+                            for (auto lrc : lrconds)
+                            {
+                                CompareCondition lc = lrc;
+                                memcpy(&lc.val, rdata + lc.rhsOffset, lc.len);
+                                lc.rhsAttr = false;
+                                lconds_ext.push_back(lc);
+                            }
+
+                            checkPrimaryKeyAndIndex(leftTableName, lconds_ext, luse_indexNo, lused_indexNo, lused_op, lused_keys, lotherConds);
+
+                            Record rec;
+                            if (luse_indexNo)
+                            {
+                                IndexHandle lih;
+                                IndexScan lis;
+                                im->openIndex(sm->openedDbName + "/" + leftTableName, lused_indexNo, lih);
+                                lis.openScan(lih, lused_op, lused_keys);
+                                RID lrid;
+                                Record lrec;
+                                DataType ldata;
+                                while (lis.getNextEntry(lrid))
+                                {
+                                    lfh.getRec(lrid, lrec);
+                                    lrec.getData(ldata);
+                                    if (!lfs.compareMultiple(ldata, lotherConds))
+                                        continue;
+                                    memcpy(joinedData, ldata, leftTupleLen);
+                                    memcpy(joinedData + leftTupleLen, rdata, rightTupleLen);
+                                    rec.set(defaultRID, joinedData, leftTupleLen + rightTupleLen);
+                                    results.push_back(rec);
+                                }
+                                ris.closeScan();
+                                im->closeIndex(sm->openedDbName + "/" + leftTableName, lused_indexNo);
+                            }
                             else
-                                cc.val = cond.rhsValue.pData;
-                            cc.attrIdx = idx;
-                            rconds.push_back(cc);
+                            {
+                                lfs.openScan(lfh, lconds_ext);
+                                Record lrec;
+                                DataType ldata;
+                                while (lfs.getNextRec(lrec))
+                                {
+                                    lrec.getData(ldata);
+                                    memcpy(joinedData, ldata, leftTupleLen);
+                                    memcpy(joinedData + leftTupleLen, rdata, rightTupleLen);
+                                    rec.set(defaultRID, joinedData, leftTupleLen + rightTupleLen);
+                                    results.push_back(rec);
+                                }
+                                rfs.closeScan();
+                            }
                         }
+                        ris.closeScan();
+                        im->closeIndex(sm->openedDbName + "/" + rightTableName, rused_indexNo);
                     }
                     else
                     {
-                        std::cout << "Invalid attribute " << cond.lhs.relName << '.' << cond.lhs.attrName << std::endl;
-                        return false;
-                    }
-                }
-
-                // check primary key and index
-                bool luse_indexNo = false;
-                std::vector<int> lused_indexNo;
-                CompOp lused_op = CompOp::NO;
-                std::vector<int> lused_keys;
-                bool ruse_indexNo = false;
-                std::vector<int> rused_indexNo;
-                CompOp rused_op = CompOp::NO;
-                std::vector<int> rused_keys;
-
-                checkPrimaryKeyAndIndex(leftTableName, lconds, luse_indexNo, lused_indexNo, lused_op, lused_keys);
-                checkPrimaryKeyAndIndex(rightTableName, rconds, ruse_indexNo, rused_indexNo, rused_op, rused_keys);
-
-                Record rec;
-                if (luse_indexNo)
-                {
-                    IndexHandle lih;
-                    IndexScan lis;
-                    im->openIndex(sm->openedDbName + "/" + leftTableName, lused_indexNo, lih);
-                    lis.openScan(lih, lused_op, lused_keys);
-                    RID lrid;
-                    Record lrec;
-                    DataType ldata;
-                    while (lis.getNextEntry(lrid))
-                    {
-                        lfh.getRec(lrid, lrec);
-                        lrec.getData(ldata);
-
-                        std::vector<CompareCondition> rconds_ext = rconds;
-                        for (auto rlc : rlconds)
-                        {
-                            CompareCondition rc = rlc;
-                            memcpy(&rc.val, ldata + rc.rhsOffset, rc.len);
-                            rc.rhsAttr = false;
-                            rconds_ext.push_back(rc);
-                        }
-
-                        checkPrimaryKeyAndIndex(rightTableName, rconds_ext, ruse_indexNo, rused_indexNo, rused_op, rused_keys);
-
+                        lfs.openScan(lfh, lconds);
                         Record rec;
-                        if (ruse_indexNo)
+                        Record lrec;
+                        DataType ldata;
+                        while (lfs.getNextRec(lrec))
                         {
-                            IndexHandle rih;
-                            IndexScan ris;
-                            im->openIndex(sm->openedDbName + "/" + rightTableName, rused_indexNo, rih);
-                            ris.openScan(rih, rused_op, rused_keys);
-                            RID rrid;
-                            Record rrec;
-                            DataType rdata;
-                            while (ris.getNextEntry(rrid))
+                            lrec.getData(ldata);
+
+                            std::vector<CompareCondition> rconds_ext = rconds;
+                            for (auto rlc : rlconds)
                             {
-                                rfh.getRec(rrid, rrec);
-                                rrec.getData(rdata);
-                                memcpy(joinedData, ldata, leftTupleLen);
-                                memcpy(joinedData + leftTupleLen, rdata, rightTupleLen);
-                                rec.set(defaultRID, joinedData, leftTupleLen + rightTupleLen);
-                                results.push_back(rec);
+                                CompareCondition rc = rlc;
+                                memcpy(&rc.val, ldata + rc.rhsOffset, rc.len);
+                                rc.rhsAttr = false;
+                                rconds_ext.push_back(rc);
                             }
-                            ris.closeScan();
-                            im->closeIndex(sm->openedDbName + "/" + rightTableName, rused_indexNo);
-                        }
-                        else
-                        {
-                            rfs.openScan(rfh, rconds_ext);
-                            Record rrec;
-                            DataType rdata;
-                            while (rfs.getNextRec(rrec))
+
+                            bool ruse_indexNo = false;
+                            std::vector<int> rused_indexNo;
+                            CompOp rused_op = CompOp::NO;
+                            std::vector<int> rused_keys;
+                            checkPrimaryKeyAndIndex(rightTableName, rconds_ext, ruse_indexNo, rused_indexNo, rused_op, rused_keys, rotherConds);
+
+                            Record rec;
+                            if (ruse_indexNo)
                             {
-                                rrec.getData(rdata);
-                                memcpy(joinedData, ldata, leftTupleLen);
-                                memcpy(joinedData + leftTupleLen, rdata, rightTupleLen);
-                                rec.set(defaultRID, joinedData, leftTupleLen + rightTupleLen);
-                                results.push_back(rec);
+                                IndexHandle rih;
+                                IndexScan ris;
+                                im->openIndex(sm->openedDbName + "/" + rightTableName, rused_indexNo, rih);
+                                ris.openScan(rih, rused_op, rused_keys);
+                                RID rrid;
+                                Record rrec;
+                                DataType rdata;
+                                while (ris.getNextEntry(rrid))
+                                {
+                                    rfh.getRec(rrid, rrec);
+                                    rrec.getData(rdata);
+                                    if (!rfs.compareMultiple(rdata, rotherConds))
+                                        continue;
+                                    memcpy(joinedData, ldata, leftTupleLen);
+                                    memcpy(joinedData + leftTupleLen, rdata, rightTupleLen);
+                                    rec.set(defaultRID, joinedData, leftTupleLen + rightTupleLen);
+                                    results.push_back(rec);
+                                }
+                                ris.closeScan();
+                                im->closeIndex(sm->openedDbName + "/" + rightTableName, rused_indexNo);
                             }
-                            rfs.closeScan();
+                            else
+                            {
+                                rfs.openScan(rfh, rconds_ext);
+                                Record rrec;
+                                DataType rdata;
+                                while (rfs.getNextRec(rrec))
+                                {
+                                    rrec.getData(rdata);
+                                    memcpy(joinedData, ldata, leftTupleLen);
+                                    memcpy(joinedData + leftTupleLen, rdata, rightTupleLen);
+                                    rec.set(defaultRID, joinedData, leftTupleLen + rightTupleLen);
+                                    results.push_back(rec);
+                                }
+                                rfs.closeScan();
+                            }
                         }
+                        lfs.closeScan();
                     }
-                    lis.closeScan();
-                    im->closeIndex(sm->openedDbName + "/" + leftTableName, lused_indexNo);
-                }
-                else if (ruse_indexNo)
-                {
-                    IndexHandle rih;
-                    IndexScan ris;
-                    im->openIndex(sm->openedDbName + "/" + rightTableName, rused_indexNo, rih);
-                    ris.openScan(rih, rused_op, rused_keys);
-                    RID rrid;
-                    Record rrec;
-                    DataType rdata;
-                    while (ris.getNextEntry(rrid))
-                    {
-                        rfh.getRec(rrid, rrec);
-                        rrec.getData(rdata);
-
-                        std::vector<CompareCondition> lconds_ext = lconds;
-                        for (auto lrc : lrconds)
-                        {
-                            CompareCondition lc = lrc;
-                            memcpy(&lc.val, rdata + lc.rhsOffset, lc.len);
-                            lc.rhsAttr = false;
-                            lconds_ext.push_back(lc);
-                        }
-
-                        checkPrimaryKeyAndIndex(rightTableName, lconds_ext, ruse_indexNo, rused_indexNo, rused_op, rused_keys);
-
-                        Record rec;
-                        if (luse_indexNo)
-                        {
-                            IndexHandle lih;
-                            IndexScan lis;
-                            im->openIndex(sm->openedDbName + "/" + leftTableName, lused_indexNo, lih);
-                            lis.openScan(lih, lused_op, lused_keys);
-                            RID lrid;
-                            Record lrec;
-                            DataType ldata;
-                            while (lis.getNextEntry(lrid))
-                            {
-                                lfh.getRec(lrid, lrec);
-                                lrec.getData(ldata);
-                                memcpy(joinedData, ldata, leftTupleLen);
-                                memcpy(joinedData + leftTupleLen, rdata, rightTupleLen);
-                                rec.set(defaultRID, joinedData, leftTupleLen + rightTupleLen);
-                                results.push_back(rec);
-                            }
-                            ris.closeScan();
-                            im->closeIndex(sm->openedDbName + "/" + leftTableName, lused_indexNo);
-                        }
-                        else
-                        {
-                            lfs.openScan(lfh, lconds_ext);
-                            Record lrec;
-                            DataType ldata;
-                            while (lfs.getNextRec(lrec))
-                            {
-                                lrec.getData(ldata);
-                                memcpy(joinedData, ldata, leftTupleLen);
-                                memcpy(joinedData + leftTupleLen, rdata, rightTupleLen);
-                                rec.set(defaultRID, joinedData, leftTupleLen + rightTupleLen);
-                                results.push_back(rec);
-                            }
-                            rfs.closeScan();
-                        }
-                    }
-                    ris.closeScan();
-                    im->closeIndex(sm->openedDbName + "/" + rightTableName, rused_indexNo);
-                }
-                else
-                {
-                    lfs.openScan(lfh, lconds);
-                    Record rec;
-                    Record lrec;
-                    DataType ldata;
-                    while (lfs.getNextRec(lrec))
-                    {
-                        lrec.getData(ldata);
-
-                        std::vector<CompareCondition> rconds_ext = rconds;
-                        for (auto rlc : rlconds)
-                        {
-                            CompareCondition rc = rlc;
-                            memcpy(&rc.val, ldata + rc.rhsOffset, rc.len);
-                            rc.rhsAttr = false;
-                            rconds_ext.push_back(rc);
-                        }
-
-                        bool ruse_indexNo = false;
-                        std::vector<int> rused_indexNo;
-                        CompOp rused_op = CompOp::NO;
-                        std::vector<int> rused_keys;
-                        checkPrimaryKeyAndIndex(rightTableName, rconds_ext, ruse_indexNo, rused_indexNo, rused_op, rused_keys);
-
-                        Record rec;
-                        if (ruse_indexNo)
-                        {
-                            IndexHandle rih;
-                            IndexScan ris;
-                            im->openIndex(sm->openedDbName + "/" + rightTableName, rused_indexNo, rih);
-                            ris.openScan(rih, rused_op, rused_keys);
-                            RID rrid;
-                            Record rrec;
-                            DataType rdata;
-                            while (ris.getNextEntry(rrid))
-                            {
-                                rfh.getRec(rrid, rrec);
-                                rrec.getData(rdata);
-                                memcpy(joinedData, ldata, leftTupleLen);
-                                memcpy(joinedData + leftTupleLen, rdata, rightTupleLen);
-                                rec.set(defaultRID, joinedData, leftTupleLen + rightTupleLen);
-                                results.push_back(rec);
-                            }
-                            ris.closeScan();
-                            im->closeIndex(sm->openedDbName + "/" + rightTableName, rused_indexNo);
-                        }
-                        else
-                        {
-                            rfs.openScan(rfh, rconds_ext);
-                            Record rrec;
-                            DataType rdata;
-                            while (rfs.getNextRec(rrec))
-                            {
-                                rrec.getData(rdata);
-                                memcpy(joinedData, ldata, leftTupleLen);
-                                memcpy(joinedData + leftTupleLen, rdata, rightTupleLen);
-                                rec.set(defaultRID, joinedData, leftTupleLen + rightTupleLen);
-                                results.push_back(rec);
-                            }
-                            rfs.closeScan();
-                        }
-                    }
-                    lfs.closeScan();
                 }
             }
 
@@ -940,13 +977,18 @@ public:
         for (auto cond : conditions)
         {
             auto it = std::find(allAttrName.begin(), allAttrName.end(), cond.lhs.attrName);
+            if (it == allAttrName.end())
+            {
+                std::cout << "Attribute " << cond.lhs.relName << "." << cond.lhs.attrName << " not exists." << std::endl;
+                return false;
+            }
             auto idx = std::distance(allAttrName.begin(), it);
             CompareCondition cc;
             cc.op = cond.op;
             cc.offset = allOffsets[idx];
             cc.type = allTypes[idx];
             cc.len = allTypeLens[idx];
-            if (cond.op == CompOp::IN)
+            if (cond.op == CompOp::IN || cond.op >= 11)
                 for (auto val : cond.rhsValues)
                     cc.vals.push_back(val.pData);
             else
@@ -955,6 +997,11 @@ public:
                 {
                     cc.rhsAttr = true;
                     auto _it = std::find(allAttrName.begin(), allAttrName.end(), cond.rhs.attrName);
+                    if (_it == allAttrName.end())
+                    {
+                        std::cout << "Attribute " << cond.rhs.relName << "." << cond.rhs.attrName << " not exists." << std::endl;
+                        return false;
+                    }
                     auto _idx = std::distance(allAttrName.begin(), _it);
                     cc.rhsOffset = allOffsets[_idx];
                 }
@@ -979,7 +1026,8 @@ public:
         std::vector<int> used_indexNo;
         CompOp used_op = CompOp::NO;
         std::vector<int> used_keys;
-        checkPrimaryKeyAndIndex(tableName, conds, use_indexNo, used_indexNo, used_op, used_keys);
+        std::vector<CompareCondition> otherConds;
+        checkPrimaryKeyAndIndex(tableName, conds, use_indexNo, used_indexNo, used_op, used_keys, otherConds);
 
         // scan for results
         std::vector<RID> results;
@@ -993,6 +1041,11 @@ public:
             RID rid;
             while (is.getNextEntry(rid))
             {
+                fh.getRec(rid, rec);
+                DataType tmp;
+                rec.getData(tmp);
+                if (!fs.compareMultiple(tmp, otherConds))
+                    continue;
                 results.push_back(rid);
             }
             is.closeScan();
@@ -1235,13 +1288,18 @@ public:
         for (auto cond : conditions)
         {
             auto it = std::find(allAttrName.begin(), allAttrName.end(), cond.lhs.attrName);
+            if (it == allAttrName.end())
+            {
+                std::cout << "Attribute " << cond.lhs.relName << "." << cond.lhs.attrName << " not exists." << std::endl;
+                return false;
+            }
             auto idx = std::distance(allAttrName.begin(), it);
             CompareCondition cc;
             cc.op = cond.op;
             cc.offset = allOffsets[idx];
             cc.type = allTypes[idx];
             cc.len = allTypeLens[idx];
-            if (cond.op == CompOp::IN)
+            if (cond.op == CompOp::IN || cond.op >= 11)
                 for (auto val : cond.rhsValues)
                     cc.vals.push_back(val.pData);
             else
@@ -1250,6 +1308,11 @@ public:
                 {
                     cc.rhsAttr = true;
                     auto _it = std::find(allAttrName.begin(), allAttrName.end(), cond.rhs.attrName);
+                    if (_it == allAttrName.end())
+                    {
+                        std::cout << "Attribute " << cond.rhs.relName << "." << cond.rhs.attrName << " not exists." << std::endl;
+                        return false;
+                    }
                     auto _idx = std::distance(allAttrName.begin(), _it);
                     cc.rhsOffset = allOffsets[_idx];
                 }
@@ -1274,7 +1337,8 @@ public:
         std::vector<int> used_indexNo;
         CompOp used_op = CompOp::NO;
         std::vector<int> used_keys;
-        checkPrimaryKeyAndIndex(tableName, conds, use_indexNo, used_indexNo, used_op, used_keys);
+        std::vector<CompareCondition> otherConds;
+        checkPrimaryKeyAndIndex(tableName, conds, use_indexNo, used_indexNo, used_op, used_keys, otherConds);
 
         // scan for results
         std::vector<RID> results;
@@ -1288,6 +1352,11 @@ public:
             RID rid;
             while (is.getNextEntry(rid))
             {
+                fh.getRec(rid, rec);
+                DataType tmp;
+                rec.getData(tmp);
+                if (!fs.compareMultiple(tmp, otherConds))
+                    continue;
                 results.push_back(rid);
             }
             is.closeScan();
@@ -1566,6 +1635,7 @@ public:
                     int *val = new int;
                     memcpy(val, rec + offsets[i], sizeof(int));
                     std::cout << *val;
+                    delete val;
                     break;
                 }
                 case AttrType::FLOAT:
@@ -1573,13 +1643,16 @@ public:
                     float *val = new float;
                     memcpy(val, rec + offsets[i], sizeof(float));
                     std::cout << *val;
+                    delete val;
                     break;
                 }
                 case AttrType::VARCHAR:
                 {
-                    char *val = new char[typeLens[i]];
+                    char *val = new char[typeLens[i] + 1];
+                    memset(val, 0, typeLens[i] + 1);
                     memcpy(val, rec + offsets[i], typeLens[i]);
                     std::cout << val;
+                    delete[] val;
                     break;
                 }
                 default:
@@ -1592,51 +1665,81 @@ public:
         return true;
     }
 
-    bool checkPrimaryKeyAndIndex(const std::string &tableName, const std::vector<CompareCondition> &conds, bool &use_indexNo, std::vector<int> &used_indexNo, CompOp &used_op, std::vector<int> &used_keys)
+    bool checkPrimaryKeyAndIndex(const std::string &tableName, const std::vector<CompareCondition> &conds, bool &use_indexNo, std::vector<int> &used_indexNo, CompOp &used_op, std::vector<int> &used_keys, std::vector<CompareCondition> &otherConds)
     {
+        use_indexNo = false;
+        used_indexNo.clear();
+        used_keys.clear();
+        otherConds.clear();
+
         std::vector<std::vector<int>> indexNo;
         sm->getPrimaryKeyAndIndex(tableName, indexNo);
         if (indexNo.size() > 0)
         {
             for (auto index : indexNo)
             {
-                bool use_index = true;
-                CompOp tmp_op = CompOp::NO;
-                std::vector<int> tmp_keys;
-                if (index.size() != conds.size())
+                if (index.size() > conds.size())
                     continue;
-                for (auto ind : index)
+                std::vector<CompareCondition> sortedConds(index.size());
+                std::vector<bool> sortedCondsOccupied(index.size(), false);
+                std::vector<CompareCondition> tmp_other;
+                for (auto cond : conds)
                 {
-                    bool flag = false;
-                    for (auto cond : conds)
+                    auto it = std::find(index.begin(), index.end(), cond.offset);
+                    auto idx = std::distance(index.begin(), it);
+                    if (it == index.end() || cond.rhsAttr || (cond.op > 4 && cond.op < 10) || sortedCondsOccupied[idx])
+                        tmp_other.push_back(cond);
+                    else
                     {
-                        if (cond.offset == ind && cond.rhsAttr == false)
-                        {
-                            if (tmp_op == CompOp::NO)
-                                tmp_op = cond.op;
-                            if (tmp_op <= 4 && tmp_op == cond.op)
-                            {
-                                flag = true;
-                                tmp_keys.push_back(cond.val.Int);
-                                break;
-                            }
-                        }
-                    }
-                    if (!flag)
-                    {
-                        use_index = false;
-                        break;
+                        sortedConds[idx] = cond;
+                        sortedCondsOccupied[idx] = true;
                     }
                 }
-                if (use_index && index.size() > used_indexNo.size())
+                size_t i = 0;
+                CompOp tmp_op = CompOp::E;
+                std::vector<int> tmp_keys, tmp_keys_a, tmp_keys_b;
+                bool stop = false;
+                while (i < sortedConds.size() && !stop)
+                {
+                    stop = true;
+                    if (!sortedCondsOccupied[i])
+                        break;
+                    if (tmp_op != E && tmp_op != sortedConds[i].op)
+                        break;
+                    if (sortedConds[i].op == CompOp::E)
+                    {
+                        stop = false;
+                        tmp_keys_a.push_back(sortedConds[i].val.Int);
+                        tmp_keys_b.push_back(sortedConds[i].val.Int);
+                    }
+                    else if (sortedConds[i].op < 4)
+                    {
+                        tmp_keys_a.push_back(sortedConds[i].val.Int);
+                        tmp_keys_b.push_back(sortedConds[i].val.Int);
+                    }
+                    else
+                    {
+                        tmp_keys_a.push_back(sortedConds[i].vals[0].Int);
+                        tmp_keys_b.push_back(sortedConds[i].vals[1].Int);
+                    }
+                    tmp_op = sortedConds[i].op;
+                    i++;
+                }
+                tmp_keys.insert(tmp_keys.end(), tmp_keys_a.begin(), tmp_keys_a.end());
+                if (tmp_op >= 10)
+                    tmp_keys.insert(tmp_keys.end(), tmp_keys_b.begin(), tmp_keys_b.end());
+
+                if (i == index.size() && index.size() > used_indexNo.size())
                 {
                     use_indexNo = true;
                     used_indexNo = index;
                     used_op = tmp_op;
                     used_keys = tmp_keys;
+                    otherConds = tmp_other;
                 }
             }
         }
+        return true;
     }
     bool updateRecordData(DataType tmp, std::vector<std::string> &allAttrName, std::vector<bool> &nulls, std::vector<int> &allOffsets, std::vector<AttrType> &allTypes, std::vector<int> &allTypeLens, std::vector<Condition> sets)
     {
@@ -1644,6 +1747,11 @@ public:
         for (auto set_c : sets)
         {
             auto it = std::find(allAttrName.begin(), allAttrName.end(), set_c.lhs.attrName);
+            if (it == allAttrName.end())
+            {
+                std::cout << "Attribute " << set_c.lhs.relName << "." << set_c.lhs.attrName << " not exists." << std::endl;
+                return false;
+            }
             auto idx = std::distance(allAttrName.begin(), it);
 
             if (set_c.rhsValue.type == AttrType::NONE)
@@ -1745,8 +1853,8 @@ public:
                     case AttrType::VARCHAR:
                     {
                         val.type = AttrType::VARCHAR;
-                        val.len = valStrings.size();
-                        if (val.len >= allTypeLens[i])
+                        val.len = valStrings[i].size();
+                        if (val.len > allTypeLens[i])
                         {
                             std::cout << "WARNING: Too long VARCHAR at: " << lor << std::endl;
                             val.len = allTypeLens[i];
@@ -1763,6 +1871,1581 @@ public:
             insert(tableName, values);
         }
         ifs.close();
+        return true;
+    }
+    bool optimizeConditions(std::vector<Condition> &conditions)
+    {
+        std::vector<Condition> newConditions;
+        for (size_t i = 0; i < conditions.size(); i++)
+        {
+            if (conditions[i].bRhsIsAttr)
+            {
+                newConditions.push_back(conditions[i]);
+                continue;
+            }
+            size_t j = 0;
+            for (j = 0; j < newConditions.size(); j++)
+            {
+                if (newConditions[j].lhs == conditions[i].lhs && conditions[i].bRhsIsAttr == false)
+                {
+                    auto t = newConditions[j];
+                    auto s = conditions[i];
+                    switch (s.op)
+                    {
+                    case CompOp::E:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                            if (s.rhsValue != t.rhsValue)
+                                return false;
+                            break;
+                        case CompOp::L:
+                            if (s.rhsValue >= t.rhsValue)
+                                return false;
+                            t.op = CompOp::E;
+                            t.rhsValue = s.rhsValue;
+                            break;
+                        case CompOp::LE:
+                            if (s.rhsValue > t.rhsValue)
+                                return false;
+                            t.op = CompOp::E;
+                            t.rhsValue = s.rhsValue;
+                            break;
+                        case CompOp::G:
+                            if (s.rhsValue <= t.rhsValue)
+                                return false;
+                            t.op = CompOp::E;
+                            t.rhsValue = s.rhsValue;
+                            break;
+                        case CompOp::GE:
+                            if (s.rhsValue < t.rhsValue)
+                                return false;
+                            t.op = CompOp::E;
+                            t.rhsValue = s.rhsValue;
+                            break;
+                        case CompOp::NE:
+                            if (s.rhsValue == t.rhsValue)
+                                return false;
+                            t.op = CompOp::E;
+                            t.rhsValue = s.rhsValue;
+                            break;
+                        case CompOp::LIKE:
+                            if (!std::regex_match(s.rhsValue.pData.String, std::regex(t.rhsValue.pData.String)))
+                                return false;
+                            t.op = CompOp::E;
+                            t.rhsValue = s.rhsValue;
+                            break;
+                        case CompOp::IN:
+                        {
+                            bool found = false;
+                            for (auto v : t.rhsValues)
+                                if (v == s.rhsValue)
+                                {
+                                    found = true;
+                                    break;
+                                }
+                            if (!found)
+                                return false;
+                            t.op = CompOp::E;
+                            t.rhsValue = s.rhsValue;
+                            break;
+                        }
+                        case CompOp::ISNULL:
+                            return false;
+                            break;
+                        case CompOp::ISNOTNULL:
+                            break;
+                        case CompOp::BETWEEN:
+                            if (s.rhsValue <= t.rhsValues[0] || s.rhsValue >= t.rhsValues[1])
+                                return false;
+                            break;
+                        case CompOp::BETWEENL:
+                            if (s.rhsValue < t.rhsValues[0] || s.rhsValue >= t.rhsValues[1])
+                                return false;
+                            break;
+                        case CompOp::BETWEENR:
+                            if (s.rhsValue <= t.rhsValues[0] || s.rhsValue > t.rhsValues[1])
+                                return false;
+                            break;
+                        case CompOp::BETWEENLR:
+                            if (s.rhsValue < t.rhsValues[0] || s.rhsValue > t.rhsValues[1])
+                                return false;
+                            break;
+                        default:
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::L:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                            if (s.rhsValue <= t.rhsValue)
+                                return false;
+                            break;
+                        case CompOp::L:
+                            t.rhsValue = std::min(t.rhsValue, s.rhsValue);
+                            break;
+                        case CompOp::LE:
+                            if (s.rhsValue <= t.rhsValue)
+                            {
+                                t.op = CompOp::L;
+                                t.rhsValue = s.rhsValue;
+                            }
+                            break;
+                        case CompOp::G:
+                            if (s.rhsValue <= t.rhsValue)
+                                return false;
+                            t.op = CompOp::BETWEEN;
+                            t.rhsValues.push_back(t.rhsValue);
+                            t.rhsValues.push_back(s.rhsValue);
+                            break;
+                        case CompOp::GE:
+                            if (s.rhsValue <= t.rhsValue)
+                                return false;
+                            t.op = CompOp::BETWEENL;
+                            t.rhsValues.push_back(t.rhsValue);
+                            t.rhsValues.push_back(s.rhsValue);
+                            break;
+                        case CompOp::NE:
+                            if (s.rhsValue <= t.rhsValue)
+                            {
+                                t = s;
+                                break;
+                            }
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        case CompOp::IN:
+                        {
+                            s.rhsValues.clear();
+                            for (auto v : t.rhsValues)
+                                if (v < s.rhsValue)
+                                    s.rhsValues.push_back(v);
+                            if (s.rhsValues.size() == 0)
+                                return false;
+                            t.rhsValues = s.rhsValues;
+                            break;
+                        }
+                        case CompOp::ISNULL:
+                            return false;
+                            break;
+                        case CompOp::ISNOTNULL:
+                            break;
+                        case CompOp::BETWEEN:
+                        case CompOp::BETWEENL:
+                            if (s.rhsValue <= t.rhsValues[0])
+                                return false;
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue <= t.rhsValues[1])
+                                t.rhsValues[1] = s.rhsValue;
+                            break;
+                        case CompOp::BETWEENR:
+                            if (s.rhsValue <= t.rhsValues[0])
+                                return false;
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue <= t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEEN;
+                                t.rhsValues[1] = s.rhsValue;
+                            }
+                            break;
+                        case CompOp::BETWEENLR:
+                            if (s.rhsValue <= t.rhsValues[0])
+                                return false;
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue <= t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENL;
+                                t.rhsValues[1] = s.rhsValue;
+                            }
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::LE:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                            if (s.rhsValue < t.rhsValue)
+                                return false;
+                            break;
+                        case CompOp::L:
+                            if (s.rhsValue < t.rhsValue)
+                            {
+                                t.op = CompOp::LE;
+                                t.rhsValue = s.rhsValue;
+                            }
+                            break;
+                        case CompOp::LE:
+                            t.rhsValue = std::min(t.rhsValue, s.rhsValue);
+                            break;
+                        case CompOp::G:
+                            if (s.rhsValue <= t.rhsValue)
+                                return false;
+                            t.op = CompOp::BETWEENR;
+                            t.rhsValues.push_back(t.rhsValue);
+                            t.rhsValues.push_back(s.rhsValue);
+                            break;
+                        case CompOp::GE:
+                            if (s.rhsValue < t.rhsValue)
+                                return false;
+                            t.op = CompOp::BETWEENLR;
+                            t.rhsValues.push_back(t.rhsValue);
+                            t.rhsValues.push_back(s.rhsValue);
+                            break;
+                        case CompOp::NE:
+                            if (s.rhsValue < t.rhsValue)
+                            {
+                                t = s;
+                                break;
+                            }
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        case CompOp::IN:
+                        {
+                            s.rhsValues.clear();
+                            for (auto v : t.rhsValues)
+                                if (v <= s.rhsValue)
+                                    s.rhsValues.push_back(v);
+                            if (s.rhsValues.size() == 0)
+                                return false;
+                            t.rhsValues = s.rhsValues;
+                            break;
+                        }
+                        case CompOp::ISNULL:
+                            return false;
+                            break;
+                        case CompOp::ISNOTNULL:
+                            break;
+                        case CompOp::BETWEEN:
+                            if (s.rhsValue <= t.rhsValues[0])
+                                return false;
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENR;
+                                t.rhsValues[1] = s.rhsValue;
+                            }
+                            break;
+                        case CompOp::BETWEENL:
+                            if (s.rhsValue < t.rhsValues[0])
+                                return false;
+                            else if (s.rhsValue == t.rhsValues[0])
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValue;
+                            }
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENLR;
+                                t.rhsValues[1] = s.rhsValue;
+                            }
+                            break;
+                        case CompOp::BETWEENR:
+                            if (s.rhsValue <= t.rhsValues[0])
+                                return false;
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                                t.rhsValues[1] = s.rhsValue;
+                            break;
+                        case CompOp::BETWEENLR:
+                            if (s.rhsValue < t.rhsValues[0])
+                                return false;
+                            else if (s.rhsValue == t.rhsValues[0])
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValue;
+                            }
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                                t.rhsValues[1] = s.rhsValue;
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::G:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                            if (s.rhsValue >= t.rhsValue)
+                                return false;
+                            break;
+                        case CompOp::L:
+                            if (s.rhsValue >= t.rhsValue)
+                                return false;
+                            t.op = CompOp::BETWEEN;
+                            t.rhsValues.push_back(s.rhsValue);
+                            t.rhsValues.push_back(t.rhsValue);
+                            break;
+                        case CompOp::LE:
+                            if (s.rhsValue >= t.rhsValue)
+                                return false;
+                            t.op = CompOp::BETWEENR;
+                            t.rhsValues.push_back(s.rhsValue);
+                            t.rhsValues.push_back(t.rhsValue);
+                            break;
+                        case CompOp::G:
+                            t.rhsValue = std::max(t.rhsValue, s.rhsValue);
+                            break;
+                        case CompOp::GE:
+                            if (s.rhsValue >= t.rhsValue)
+                            {
+                                t.op = CompOp::G;
+                                t.rhsValue = s.rhsValue;
+                            }
+                            break;
+                        case CompOp::NE:
+                            if (s.rhsValue >= t.rhsValue)
+                            {
+                                t = s;
+                                break;
+                            }
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        case CompOp::IN:
+                        {
+                            s.rhsValues.clear();
+                            for (auto v : t.rhsValues)
+                                if (v > s.rhsValue)
+                                    s.rhsValues.push_back(v);
+                            if (s.rhsValues.size() == 0)
+                                return false;
+                            t.rhsValues = s.rhsValues;
+                            break;
+                        }
+                        case CompOp::ISNULL:
+                            return false;
+                            break;
+                        case CompOp::ISNOTNULL:
+                            break;
+                        case CompOp::BETWEEN:
+                            if (s.rhsValue >= t.rhsValues[1])
+                                return false;
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                                t.rhsValues[0] = s.rhsValue;
+                            break;
+                        case CompOp::BETWEENL:
+                            if (s.rhsValue >= t.rhsValues[1])
+                                return false;
+                            else if (s.rhsValue >= t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEEN;
+                                t.rhsValues[0] = s.rhsValue;
+                            }
+                            break;
+                        case CompOp::BETWEENR:
+                            if (s.rhsValue >= t.rhsValues[1])
+                                return false;
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                                t.rhsValues[0] = s.rhsValue;
+                            break;
+                        case CompOp::BETWEENLR:
+                            if (s.rhsValue >= t.rhsValues[1])
+                                return false;
+                            else if (s.rhsValue >= t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENR;
+                                t.rhsValues[0] = s.rhsValue;
+                            }
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::GE:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                            if (s.rhsValue > t.rhsValue)
+                                return false;
+                            break;
+                        case CompOp::L:
+                            if (s.rhsValue >= t.rhsValue)
+                                return false;
+                            t.op = CompOp::BETWEENL;
+                            t.rhsValues.push_back(s.rhsValue);
+                            t.rhsValues.push_back(t.rhsValue);
+                            break;
+                        case CompOp::LE:
+                            if (s.rhsValue > t.rhsValue)
+                                return false;
+                            if (s.rhsValue == t.rhsValue)
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValue;
+                                break;
+                            }
+                            t.op = CompOp::BETWEENLR;
+                            t.rhsValues.push_back(s.rhsValue);
+                            t.rhsValues.push_back(t.rhsValue);
+                            break;
+                        case CompOp::G:
+                            if (s.rhsValue > t.rhsValue)
+                            {
+                                t.op = CompOp::GE;
+                                t.rhsValue = s.rhsValue;
+                            }
+                            break;
+                        case CompOp::GE:
+                            t.rhsValue = std::max(t.rhsValue, s.rhsValue);
+                            break;
+                        case CompOp::NE:
+                            if (s.rhsValue > t.rhsValue)
+                            {
+                                t = s;
+                                break;
+                            }
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        case CompOp::IN:
+                        {
+                            s.rhsValues.clear();
+                            for (auto v : t.rhsValues)
+                                if (v >= s.rhsValue)
+                                    s.rhsValues.push_back(v);
+                            if (s.rhsValues.size() == 0)
+                                return false;
+                            t.rhsValues = s.rhsValues;
+                            break;
+                        }
+                        case CompOp::ISNULL:
+                            return false;
+                            break;
+                        case CompOp::ISNOTNULL:
+                            break;
+                        case CompOp::BETWEEN:
+                            if (s.rhsValue >= t.rhsValues[1])
+                                return false;
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENL;
+                                t.rhsValues[0] = s.rhsValue;
+                            }
+                            break;
+                        case CompOp::BETWEENL:
+                            if (s.rhsValue >= t.rhsValues[1])
+                                return false;
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                                t.rhsValues[0] = s.rhsValue;
+                            break;
+                        case CompOp::BETWEENR:
+                            if (s.rhsValue > t.rhsValues[1])
+                                return false;
+                            else if (s.rhsValue == t.rhsValues[1])
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValue;
+                            }
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENLR;
+                                t.rhsValues[0] = s.rhsValue;
+                            }
+                            break;
+                        case CompOp::BETWEENLR:
+                            if (s.rhsValue > t.rhsValues[1])
+                                return false;
+                            else if (s.rhsValue == t.rhsValues[1])
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValue;
+                            }
+                            else if (s.rhsValue > t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                                t.rhsValues[0] = s.rhsValue;
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::NE:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                            if (s.rhsValue == t.rhsValue)
+                                return false;
+                            break;
+                        case CompOp::L:
+                            if (s.rhsValue < t.rhsValue)
+                                return false;
+                            newConditions.push_back(s);
+                            break;
+                        case CompOp::LE:
+                            if (s.rhsValue <= t.rhsValue)
+                                return false;
+                            newConditions.push_back(s);
+                            break;
+                        case CompOp::G:
+                            if (s.rhsValue > t.rhsValue)
+                                return false;
+                            newConditions.push_back(s);
+                            break;
+                        case CompOp::GE:
+                            if (s.rhsValue >= t.rhsValue)
+                                return false;
+                            newConditions.push_back(s);
+                            break;
+                        case CompOp::NE:
+                            if (s.rhsValue != t.rhsValue)
+                                newConditions.push_back(s);
+                            break;
+                        case CompOp::IN:
+                        {
+                            s.rhsValues.clear();
+                            for (auto v : t.rhsValues)
+                                if (v != s.rhsValue)
+                                    s.rhsValues.push_back(v);
+                            if (s.rhsValues.size() == 0)
+                                return false;
+                            t.rhsValues = s.rhsValues;
+                            break;
+                        }
+                        case CompOp::ISNULL:
+                            return false;
+                            break;
+                        case CompOp::ISNOTNULL:
+                            break;
+                        case CompOp::BETWEEN:
+                            if (s.rhsValue > t.rhsValues[0] && s.rhsValue < t.rhsValues[1])
+                                newConditions.push_back(s);
+                            break;
+                        case CompOp::BETWEENL:
+                            if (s.rhsValue == t.rhsValues[0])
+                            {
+                                t.op = CompOp::BETWEEN;
+                                break;
+                            }
+                            if (s.rhsValue > t.rhsValues[0] || s.rhsValue < t.rhsValues[1])
+                                newConditions.push_back(s);
+                            break;
+                        case CompOp::BETWEENR:
+                            if (s.rhsValue == t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEEN;
+                                break;
+                            }
+                            if (s.rhsValue > t.rhsValues[0] || s.rhsValue < t.rhsValues[1])
+                                newConditions.push_back(s);
+                            break;
+                        case CompOp::BETWEENLR:
+                            if (s.rhsValue == t.rhsValues[0])
+                            {
+                                t.op = CompOp::BETWEENR;
+                                break;
+                            }
+                            if (s.rhsValue == t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENL;
+                                break;
+                            }
+                            if (s.rhsValue > t.rhsValues[0] || s.rhsValue < t.rhsValues[1])
+                                newConditions.push_back(s);
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::IN:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                        {
+                            bool found = false;
+                            for (auto v : s.rhsValues)
+                                if (v == t.rhsValue)
+                                {
+                                    found = true;
+                                    break;
+                                }
+                            if (!found)
+                                return false;
+                            break;
+                        }
+                        case CompOp::L:
+                        {
+                            t.rhsValues.clear();
+                            for (auto v : s.rhsValues)
+                                if (v < t.rhsValue)
+                                    t.rhsValues.push_back(v);
+                            if (t.rhsValues.size() == 0)
+                                return false;
+                            t.op = CompOp::IN;
+                            break;
+                        }
+                        case CompOp::LE:
+                        {
+                            t.rhsValues.clear();
+                            for (auto v : s.rhsValues)
+                                if (v <= t.rhsValue)
+                                    t.rhsValues.push_back(v);
+                            if (t.rhsValues.size() == 0)
+                                return false;
+                            t.op = CompOp::IN;
+                            break;
+                        }
+                        case CompOp::G:
+                        {
+                            t.rhsValues.clear();
+                            for (auto v : s.rhsValues)
+                                if (v > t.rhsValue)
+                                    t.rhsValues.push_back(v);
+                            if (t.rhsValues.size() == 0)
+                                return false;
+                            t.op = CompOp::IN;
+                            break;
+                        }
+                        case CompOp::GE:
+                        {
+                            t.rhsValues.clear();
+                            for (auto v : s.rhsValues)
+                                if (v >= t.rhsValue)
+                                    t.rhsValues.push_back(v);
+                            if (t.rhsValues.size() == 0)
+                                return false;
+                            t.op = CompOp::IN;
+                            break;
+                        }
+                        case CompOp::NE:
+                        {
+                            t.rhsValues.clear();
+                            for (auto v : s.rhsValues)
+                                if (v != t.rhsValue)
+                                    t.rhsValues.push_back(v);
+                            if (t.rhsValues.size() == 0)
+                                return false;
+                            t.op = CompOp::IN;
+                            break;
+                        }
+                        case CompOp::IN:
+                        {
+                            std::vector<Value> tmp;
+                            std::sort(t.rhsValues.begin(), t.rhsValues.end());
+                            std::sort(s.rhsValues.begin(), s.rhsValues.end());
+                            std::set_intersection(t.rhsValues.begin(), t.rhsValues.end(), s.rhsValues.begin(), s.rhsValues.end(), std::back_inserter(tmp));
+                            std::sort(tmp.begin(), tmp.end());
+                            auto it = std::unique(tmp.begin(), tmp.end());
+                            if (it != tmp.end())
+                                tmp.erase(it, tmp.end());
+                            if (tmp.size() == 0)
+                                return false;
+                            t.rhsValues = tmp;
+                            break;
+                        }
+                        case CompOp::ISNULL:
+                            return false;
+                            break;
+                        case CompOp::ISNOTNULL:
+                            break;
+                        case CompOp::LIKE:
+                            t.rhsValues.clear();
+                            for (auto v : s.rhsValues)
+                                if (std::regex_match(v.pData.String, std::regex(t.rhsValue.pData.String)))
+                                    t.rhsValues.push_back(v);
+                            if (t.rhsValues.size() == 0)
+                                return false;
+                            t.op = CompOp::IN;
+                            break;
+                        case CompOp::BETWEEN:
+                        {
+                            std::vector<Value> tmp;
+                            for (auto v : s.rhsValues)
+                                if (v > t.rhsValues[0] && v < t.rhsValues[1])
+                                    tmp.push_back(v);
+                            t.op = CompOp::IN;
+                            t.rhsValues = tmp;
+                            break;
+                        }
+                        case CompOp::BETWEENL:
+                        {
+                            std::vector<Value> tmp;
+                            for (auto v : s.rhsValues)
+                                if (v >= t.rhsValues[0] && v < t.rhsValues[1])
+                                    tmp.push_back(v);
+                            t.op = CompOp::IN;
+                            t.rhsValues = tmp;
+                            break;
+                        }
+                        case CompOp::BETWEENR:
+                        {
+                            std::vector<Value> tmp;
+                            for (auto v : s.rhsValues)
+                                if (v > t.rhsValues[0] && v <= t.rhsValues[1])
+                                    tmp.push_back(v);
+                            t.op = CompOp::IN;
+                            t.rhsValues = tmp;
+                            break;
+                        }
+                        case CompOp::BETWEENLR:
+                        {
+                            std::vector<Value> tmp;
+                            for (auto v : s.rhsValues)
+                                if (v >= t.rhsValues[0] && v <= t.rhsValues[1])
+                                    tmp.push_back(v);
+                            t.op = CompOp::IN;
+                            t.rhsValues = tmp;
+                            break;
+                        }
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::ISNULL:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                        case CompOp::L:
+                        case CompOp::LE:
+                        case CompOp::G:
+                        case CompOp::GE:
+                        case CompOp::NE:
+                        case CompOp::IN:
+                        case CompOp::ISNOTNULL:
+                        case CompOp::BETWEEN:
+                        case CompOp::BETWEENL:
+                        case CompOp::BETWEENR:
+                        case CompOp::BETWEENLR:
+                            return false;
+                            break;
+                        case CompOp::ISNULL:
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::ISNOTNULL:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                        case CompOp::L:
+                        case CompOp::LE:
+                        case CompOp::G:
+                        case CompOp::GE:
+                        case CompOp::NE:
+                        case CompOp::IN:
+                        case CompOp::ISNOTNULL:
+                        case CompOp::BETWEEN:
+                        case CompOp::BETWEENL:
+                        case CompOp::BETWEENR:
+                        case CompOp::BETWEENLR:
+                            break;
+                        case CompOp::ISNULL:
+                            return false;
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::LIKE:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                            if (!std::regex_match(t.rhsValue.pData.String, std::regex(s.rhsValue.pData.String)))
+                                return false;
+                            break;
+                        case CompOp::IN:
+                            s.rhsValues.clear();
+                            for (auto v : t.rhsValues)
+                                if (std::regex_match(v.pData.String, std::regex(s.rhsValue.pData.String)))
+                                    s.rhsValues.push_back(v);
+                            if (s.rhsValues.size() == 0)
+                                return false;
+                            t.rhsValues = s.rhsValues;
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::BETWEEN:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                            if (t.rhsValue <= s.rhsValues[0] || t.rhsValue >= s.rhsValues[1])
+                                return false;
+                            break;
+                        case CompOp::L:
+                            if (t.rhsValue <= s.rhsValues[0])
+                                return false;
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue <= s.rhsValues[1])
+                                s.rhsValues[1] = t.rhsValue;
+                            t = s;
+                            break;
+                        case CompOp::LE:
+                            if (t.rhsValue <= s.rhsValues[0])
+                                return false;
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                            {
+                                s.op = CompOp::BETWEENR;
+                                s.rhsValues[1] = t.rhsValue;
+                            }
+                            t = s;
+                            break;
+                        case CompOp::G:
+                            if (t.rhsValue >= s.rhsValues[1])
+                                return false;
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                                s.rhsValues[0] = t.rhsValue;
+                            t = s;
+                            break;
+                        case CompOp::GE:
+                            if (t.rhsValue >= s.rhsValues[1])
+                                return false;
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                            {
+                                s.op = CompOp::BETWEENL;
+                                s.rhsValues[0] = t.rhsValue;
+                            }
+                            t = s;
+                            break;
+                        case CompOp::NE:
+                            if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                                newConditions.push_back(conditions[i]);
+                            break;
+                        case CompOp::IN:
+                        {
+                            std::vector<Value> tmp;
+                            for (auto v : t.rhsValues)
+                                if (v > s.rhsValues[0] && v < s.rhsValues[1])
+                                    tmp.push_back(v);
+                            t.rhsValues = tmp;
+                            break;
+                        }
+                        case CompOp::ISNULL:
+                            return false;
+                            break;
+                        case CompOp::ISNOTNULL:
+                            break;
+                        case CompOp::BETWEEN:
+                            if (s.rhsValues[0] >= t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEEN;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEEN;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEEN;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEEN;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        case CompOp::BETWEENL:
+                            if (s.rhsValues[0] >= t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEEN;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEEN;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENL;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEENL;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        case CompOp::BETWEENR:
+                            if (s.rhsValues[0] >= t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEENR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEEN;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENR;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEEN;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        case CompOp::BETWEENLR:
+                            if (s.rhsValues[0] >= t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEENR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEEN;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENLR;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEENL;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::BETWEENL:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                            if (t.rhsValue < s.rhsValues[0] || t.rhsValue >= s.rhsValues[1])
+                                return false;
+                            break;
+                        case CompOp::L:
+                            if (t.rhsValue <= s.rhsValues[0])
+                                return false;
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue <= s.rhsValues[1])
+                                s.rhsValues[1] = t.rhsValue;
+                            t = s;
+                            break;
+                        case CompOp::LE:
+                            if (t.rhsValue < s.rhsValues[0])
+                                return false;
+                            else if (t.rhsValue == s.rhsValues[0])
+                            {
+                                s.op = CompOp::E;
+                                s.rhsValue = t.rhsValue;
+                            }
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                            {
+                                s.op = CompOp::BETWEENLR;
+                                s.rhsValues[1] = t.rhsValue;
+                            }
+                            t = s;
+                            break;
+                        case CompOp::G:
+                            if (t.rhsValue >= s.rhsValues[1])
+                                return false;
+                            else if (t.rhsValue >= s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                            {
+                                s.op = CompOp::BETWEEN;
+                                s.rhsValues[0] = t.rhsValue;
+                            }
+                            t = s;
+                            break;
+                        case CompOp::GE:
+                            if (t.rhsValue >= s.rhsValues[1])
+                                return false;
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                                s.rhsValues[0] = t.rhsValue;
+                            t = s;
+                            break;
+                        case CompOp::NE:
+                            if (t.rhsValue == s.rhsValues[0])
+                            {
+                                t.op = CompOp::BETWEEN;
+                                t.rhsValues = s.rhsValues;
+                                break;
+                            }
+                            if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                                newConditions.push_back(conditions[i]);
+                            break;
+                        case CompOp::IN:
+                        {
+                            std::vector<Value> tmp;
+                            for (auto v : t.rhsValues)
+                                if (v >= s.rhsValues[0] && v < s.rhsValues[1])
+                                    tmp.push_back(v);
+                            t.rhsValues = tmp;
+                            break;
+                        }
+                        case CompOp::ISNULL:
+                            return false;
+                            break;
+                        case CompOp::ISNOTNULL:
+                            break;
+                        case CompOp::BETWEEN:
+                            if (s.rhsValues[0] >= t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEENL;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEENL;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEEN;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEEN;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        case CompOp::BETWEENL:
+                            if (s.rhsValues[0] >= t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEENL;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEENL;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENL;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEENL;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        case CompOp::BETWEENR:
+                            if (s.rhsValues[0] > t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[0] == t.rhsValues[1])
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValues[0];
+                                break;
+                            }
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEENLR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEENL;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENR;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEEN;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        case CompOp::BETWEENLR:
+                            if (s.rhsValues[0] > t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[0] == t.rhsValues[1])
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValues[0];
+                                break;
+                            }
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEENLR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEENL;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENLR;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEENL;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::BETWEENR:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                            if (t.rhsValue <= s.rhsValues[0] || t.rhsValue > s.rhsValues[1])
+                                return false;
+                            break;
+                        case CompOp::L:
+                            if (t.rhsValue <= s.rhsValues[0])
+                                return false;
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue <= s.rhsValues[1])
+                            {
+                                s.op = CompOp::BETWEEN;
+                                s.rhsValues[1] = t.rhsValue;
+                            }
+                            t = s;
+                            break;
+                        case CompOp::LE:
+                            if (t.rhsValue <= s.rhsValues[0])
+                                return false;
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                                s.rhsValues[1] = t.rhsValue;
+                            t = s;
+                            break;
+                        case CompOp::G:
+                            if (t.rhsValue >= s.rhsValues[1])
+                                return false;
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                                s.rhsValues[0] = t.rhsValue;
+                            t = s;
+                            break;
+                        case CompOp::GE:
+                            if (t.rhsValue > s.rhsValues[1])
+                                return false;
+                            else if (t.rhsValue == s.rhsValues[1])
+                            {
+                                s.op = CompOp::E;
+                                s.rhsValue = t.rhsValue;
+                            }
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                            {
+                                s.op = CompOp::BETWEENLR;
+                                s.rhsValues[0] = t.rhsValue;
+                            }
+                            t = s;
+                            break;
+                        case CompOp::NE:
+                            if (t.rhsValue == s.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEEN;
+                                t.rhsValues = s.rhsValues;
+                                break;
+                            }
+                            if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                                newConditions.push_back(conditions[i]);
+                            break;
+                        case CompOp::IN:
+                        {
+                            std::vector<Value> tmp;
+                            for (auto v : t.rhsValues)
+                                if (v > s.rhsValues[0] && v <= s.rhsValues[1])
+                                    tmp.push_back(v);
+                            t.rhsValues = tmp;
+                            break;
+                        }
+                        case CompOp::ISNULL:
+                            return false;
+                            break;
+                        case CompOp::ISNOTNULL:
+                            break;
+                        case CompOp::BETWEEN:
+                            if (s.rhsValues[0] >= t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEEN;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEENR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEEN;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEENR;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        case CompOp::BETWEENL:
+                            if (s.rhsValues[0] >= t.rhsValues[1] || s.rhsValues[1] < t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[1] == t.rhsValues[0])
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValues[1];
+                                break;
+                            }
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEEN;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEENR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENL;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEENLR;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        case CompOp::BETWEENR:
+                            if (s.rhsValues[0] > t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEENR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEENR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENR;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEENR;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        case CompOp::BETWEENLR:
+                            if (s.rhsValues[0] > t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[1] == t.rhsValues[0])
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValues[1];
+                                break;
+                            }
+                            if (s.rhsValues[0] >= t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEENR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEENR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENLR;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEENLR;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    case CompOp::BETWEENLR:
+                    {
+                        switch (t.op)
+                        {
+                        case CompOp::E:
+                            if (t.rhsValue < s.rhsValues[0] || t.rhsValue > s.rhsValues[1])
+                                return false;
+                            break;
+                        case CompOp::L:
+                            if (t.rhsValue <= s.rhsValues[0])
+                                return false;
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue <= s.rhsValues[1])
+                            {
+                                s.op = CompOp::BETWEENL;
+                                s.rhsValues[1] = t.rhsValue;
+                            }
+                            t = s;
+                            break;
+                        case CompOp::LE:
+                            if (t.rhsValue < s.rhsValues[0])
+                                return false;
+                            else if (t.rhsValue == s.rhsValues[0])
+                            {
+                                s.op = CompOp::E;
+                                s.rhsValue = t.rhsValue;
+                            }
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                                s.rhsValues[1] = t.rhsValue;
+                            t = s;
+                            break;
+                        case CompOp::G:
+                            if (t.rhsValue >= s.rhsValues[1])
+                                return false;
+                            else if (t.rhsValue >= s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                            {
+                                s.op = CompOp::BETWEENR;
+                                s.rhsValues[0] = t.rhsValue;
+                            }
+                            t = s;
+                            break;
+                        case CompOp::GE:
+                            if (t.rhsValue > s.rhsValues[1])
+                                return false;
+                            else if (t.rhsValue == s.rhsValues[1])
+                            {
+                                s.op = CompOp::E;
+                                s.rhsValue = t.rhsValue;
+                            }
+                            else if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                                s.rhsValues[0] = t.rhsValue;
+                            t = s;
+                            break;
+                        case CompOp::NE:
+                            if (t.rhsValue == s.rhsValues[0])
+                            {
+                                t.op = CompOp::BETWEENR;
+                                t.rhsValues = s.rhsValues;
+                                break;
+                            }
+                            if (t.rhsValue == s.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENL;
+                                t.rhsValues = s.rhsValues;
+                                break;
+                            }
+                            if (t.rhsValue > s.rhsValues[0] && t.rhsValue < s.rhsValues[1])
+                                newConditions.push_back(conditions[i]);
+                            break;
+                        case CompOp::IN:
+                        {
+                            std::vector<Value> tmp;
+                            for (auto v : t.rhsValues)
+                                if (v >= s.rhsValues[0] && v <= s.rhsValues[1])
+                                    tmp.push_back(v);
+                            t.rhsValues = tmp;
+                            break;
+                        }
+                        case CompOp::ISNULL:
+                            return false;
+                            break;
+                        case CompOp::ISNOTNULL:
+                            break;
+                        case CompOp::BETWEEN:
+                            if (s.rhsValues[0] >= t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] >= t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEENL;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEENLR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] >= t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEEN;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEENR;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        case CompOp::BETWEENL:
+                            if (s.rhsValues[0] >= t.rhsValues[1] || s.rhsValues[1] < t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[1] == t.rhsValues[0])
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValues[1];
+                                break;
+                            }
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] >= t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEENL;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEENLR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] >= t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENL;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEENLR;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        case CompOp::BETWEENR:
+                            if (s.rhsValues[0] > t.rhsValues[1] || s.rhsValues[1] <= t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[1] == t.rhsValues[0])
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValues[1];
+                                break;
+                            }
+                            if (s.rhsValues[0] > t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEENLR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEENLR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENR;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEENR;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        case CompOp::BETWEENLR:
+                            if (s.rhsValues[0] > t.rhsValues[1] || s.rhsValues[1] < t.rhsValues[0])
+                                return false;
+                            if (s.rhsValues[1] == t.rhsValues[0])
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValues[1];
+                                break;
+                            }
+                            if (s.rhsValues[0] == t.rhsValues[1])
+                            {
+                                t.op = CompOp::E;
+                                t.rhsValue = s.rhsValues[0];
+                                break;
+                            }
+                            if (s.rhsValues[0] >= t.rhsValues[0])
+                                if (s.rhsValues[1] > t.rhsValues[1])
+                                {
+                                    t.op = CompOp::BETWEENLR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                }
+                                else
+                                {
+                                    t.op = CompOp::BETWEENLR;
+                                    t.rhsValues[0] = s.rhsValues[0];
+                                    t.rhsValues[1] = s.rhsValues[1];
+                                }
+                            else if (s.rhsValues[1] > t.rhsValues[1])
+                            {
+                                t.op = CompOp::BETWEENLR;
+                            }
+                            else
+                            {
+                                t.op = CompOp::BETWEENLR;
+                                t.rhsValues[1] = s.rhsValues[1];
+                            }
+                            break;
+                        default:
+                            newConditions.push_back(conditions[i]);
+                            break;
+                        }
+                    }
+                    break;
+                    default:
+                        newConditions.push_back(conditions[i]);
+                        break;
+                    }
+                    newConditions[j] = t;
+                    break;
+                }
+            }
+            if (j == newConditions.size())
+                newConditions.push_back(conditions[i]);
+        }
+        conditions = newConditions;
         return true;
     }
 };

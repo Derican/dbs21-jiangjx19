@@ -37,6 +37,10 @@ struct RelCat
     int tupleLength;
     int attrCount;
     int indexCount;
+    RelCat()
+    {
+        memset(relName, 0, RELNAME_MAX_BYTES);
+    }
 };
 
 struct AttrCat
@@ -49,10 +53,16 @@ struct AttrCat
     int nullable;
     int defaultValid;
     defaultValue defaultVal;
+    AttrCat()
+    {
+        memset(relName, 0, RELNAME_MAX_BYTES);
+        memset(attrName, 0, ATTRNAME_MAX_BYTES);
+    }
     friend std::ostream &operator<<(std::ostream &out, AttrCat value)
     {
         out << "|" << std::setw(15) << std::left << value.attrName
-            << "|" << std::setw(14) << std::left << Type2String[value.type];
+            << "|";
+        out << std::setw(14) << std::left << Type2String(value.type, value.typeLen);
         if (value.nullable == 1)
             out << "|Yes   ";
         else

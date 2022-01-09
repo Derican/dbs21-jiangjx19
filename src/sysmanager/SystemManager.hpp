@@ -88,6 +88,9 @@ public:
         {
             std::string prefix = "rm -r ";
             system((prefix + dbName).c_str());
+
+            if (dbOpened && dbName == openedDbName)
+                closeDb();
             return true;
         }
         else
@@ -320,16 +323,7 @@ public:
         rm->closeFile(openedDbName + "/" + tableName + ".ref");
         for (auto reft : reffedTables)
         {
-            rm->openFile(openedDbName + "/" + reft + ".foreign", hd);
-            scan.openScan(hd, AttrType::VARCHAR, RELNAME_MAX_BYTES, 0, CompOp::E, value);
-            while (scan.getNextRec(rec))
-            {
-                rec.getRID(rid);
-                hd.deleteRec(rid);
-            }
-            scan.closeScan();
-            rm->closeFile(openedDbName + "/" + reft + ".foreign");
-            rm->destroyFile(openedDbName + "/" + reft + "." + tableName);
+            dropTable(reft);
         }
         rm->destroyFile(openedDbName + "/" + tableName + ".ref");
 
@@ -418,7 +412,7 @@ public:
         {
             DataType tmp;
             rec.getData(tmp);
-            if (memcmp(data, tmp + 4, 4 * attributes.size()) == 0)
+            if (memcmp(data + 1, tmp + 4, 4 * attributes.size()) == 0)
                 rec.getRID(r);
             if (memcmp(&primary, tmp, 4) == 0)
                 primaryExisted = true;
@@ -467,7 +461,7 @@ public:
             RID rid;
             rec.getRID(rid);
             std::vector<int> key;
-            for (auto offset : offsets)
+            for (auto offset : indexNo)
             {
                 int *i = reinterpret_cast<int *>(tmp + offset);
                 key.push_back(*i);
@@ -564,6 +558,8 @@ public:
     {
         if (!dbOpened)
             return false;
+        if (!checkTableExists(tableName))
+            return false;
         FileScan scan;
         Record rec;
         char value[ATTRNAME_MAX_BYTES] = "\0";
@@ -593,6 +589,8 @@ public:
     bool getAllAttr(const std::string &tableName, std::vector<std::string> &attrName, std::vector<int> &offsets, std::vector<AttrType> &types, std::vector<int> &typeLens, std::vector<bool> &nulls, std::vector<bool> &defaultValids, std::vector<defaultValue> &defaults)
     {
         if (!dbOpened)
+            return false;
+        if (!checkTableExists(tableName))
             return false;
         FileScan scan;
         Record rec;
@@ -642,6 +640,8 @@ public:
     {
         if (!dbOpened)
             return false;
+        if (!checkTableExists(tableName))
+            return false;
         FileScan scan;
         Record rec;
         char value[100] = "\0";
@@ -670,6 +670,8 @@ public:
     bool getAttrInfo(const std::string &tableName, const std::string &attrName, int &offset, AttrType &type, int &typeLen)
     {
         if (!dbOpened)
+            return false;
+        if (!checkTableExists(tableName))
             return false;
         FileScan scan;
         Record rec;
@@ -848,7 +850,7 @@ public:
                     std::cout << ", ";
                 auto it = std::find(offsets.begin(), offsets.end(), indexNo[i]);
                 auto idx = std::distance(offsets.begin(), it);
-                std::cout << attributes[i];
+                std::cout << attributes[idx];
                 i++;
             }
             std::cout << ")" << std::endl;
@@ -931,6 +933,7 @@ public:
         }
         scan.closeScan();
         rm->closeFile(openedDbName + "/relcat");
+        std::cout << "Table " << tableName << " not exists." << std::endl;
         return false;
     }
     bool getPrimaryKey(const std::string &tableName, std::vector<int> &indexNo)
@@ -1760,11 +1763,11 @@ public:
             fs2.openScan(hd, AttrType::ANY, 4, 0, CompOp::NO, nullptr);
             while (fs2.getNextRec(rec2))
             {
-                flag = true;
                 rec2.getRID(q);
                 rec2.getData(qd);
                 if (p.equals(q))
                     continue;
+                flag = true;
                 for (auto i = 0; i < lenNo.size() && flag; i++)
                     if (memcmp(pd + indexNo[i], qd + indexNo[i], lenNo[i]) != 0)
                         flag = false;
